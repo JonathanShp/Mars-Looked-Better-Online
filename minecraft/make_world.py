@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import jezero_map as jm
 
 OUT = os.path.join(jm.SERVER_DIR, "world")
+REGION = os.path.join(OUT, "region")        # where the .mca files go (see region_dir)
 DATA_VERSION = 3955          # Minecraft 1.21.1
 PACK_FORMAT = 48             # data pack format for 1.21.1
 
@@ -284,9 +285,15 @@ def write_datapack():
 
 
 # ---------------------------------------------------------------- main
-def _init_worker(tracks, out):
-    global _TRACKS, OUT
-    _TRACKS, OUT = tracks, out
+def region_dir(save):
+    """Minecraft 26.x keeps the overworld in dimensions/minecraft/overworld/region; 1.21 uses region/."""
+    new = os.path.join(save, "dimensions", "minecraft", "overworld")
+    return os.path.join(new, "region") if os.path.isdir(new) else os.path.join(save, "region")
+
+
+def _init_worker(tracks, region):
+    global _TRACKS, REGION
+    _TRACKS, REGION = tracks, region
 
 
 def make_region(rxz):
@@ -303,12 +310,12 @@ def make_region(rxz):
             x, z = cx * 16 - x0, cz * 16 - z0
             chunks[(cx & 31, cz & 31)] = chunk_nbt(cx, cz, ground[z:z + 16, x:x + 16],
                                                    top_block[z:z + 16, x:x + 16], layered[z:z + 16, x:x + 16])
-    write_region(os.path.join(OUT, "region", f"r.{rx}.{rz}.mca"), chunks)
+    write_region(os.path.join(REGION, f"r.{rx}.{rz}.mca"), chunks)
     return len(chunks)
 
 
 def main():
-    global OUT
+    global OUT, REGION
     from multiprocessing import Pool, cpu_count
     t0 = time.time()
     # --save "<.minecraft>/saves/<world>": write the terrain into an existing singleplayer save
@@ -320,7 +327,9 @@ def main():
             sys.exit(f"{OUT} is not a Minecraft save (no level.dat). Create the world first.")
     elif os.path.exists(os.path.join(OUT, "level.dat")):
         sys.exit(f"{OUT} already has a world (level.dat). Move it away first if you want a fresh one.")
-    os.makedirs(os.path.join(OUT, "region"), exist_ok=True)
+    REGION = region_dir(OUT)
+    os.makedirs(REGION, exist_ok=True)
+    print(f"  writing region files to {REGION}")
     print(f"1/3 Jezero area: {jm.describe()['area']} = {jm.WIDTH} x {jm.HEIGHT} blocks (1 block = 1 m)")
     tracks = rover_track_blocks()
     print(f"  rover tracks: {len(tracks)} blocks")
@@ -330,7 +339,7 @@ def main():
                       for cz in range(cza, cza + jm.HEIGHT // 16)})
     workers = max(1, cpu_count() - 2)
     print(f"2/3 writing {len(regions)} region files with {workers} workers (a few minutes) ...")
-    with Pool(workers, initializer=_init_worker, initargs=(tracks, OUT)) as pool:
+    with Pool(workers, initializer=_init_worker, initargs=(tracks, REGION)) as pool:
         for k, _ in enumerate(pool.imap_unordered(make_region, regions), 1):
             if k % 20 == 0 or k == len(regions):
                 print(f"  {k}/{len(regions)} regions ({time.time() - t0:.0f} s)", flush=True)
