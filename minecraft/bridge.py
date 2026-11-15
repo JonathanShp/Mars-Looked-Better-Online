@@ -80,7 +80,8 @@ class Mcp:
         if len(command) > 256:
             return False, f"command too long ({len(command)} > 256): {command[:60]}..."
         ok, text = self.call("run_command", {"command": command})
-        bad = any(w in text for w in ("Unknown", "Incorrect", "Expected", "Invalid", "Can't", "No entity", "not loaded"))
+        bad = any(w in text for w in ("Unknown", "Incorrect", "Expected", "Invalid", "Can't", "No entity", "not loaded",
+                                       "Failed to parse", "No key"))
         return ok and not bad, text
 
 
@@ -301,7 +302,7 @@ def give_cuff_book(mcp, pages, errors):
         return 0
     n = 1
     for p in pages[1:]:
-        ok, out = mcp.cmd(f"item modify entity @s weapon.mainhand {{function:\"minecraft:set_written_book_pages\","
+        ok, out = mcp.cmd(f"item modify entity @s weapon.mainhand {{type:\"minecraft:set_written_book_pages\","
                           f"pages:[{{text:{snbt_str(p)}}}],mode:\"append\"}}")
         if not ok:
             errors.append(f"book page -> {out}")
