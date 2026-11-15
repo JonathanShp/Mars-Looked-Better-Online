@@ -37,6 +37,7 @@ async function start() {
   buildLayerPanel(map, layers);
   map.fitBounds(Grid.leafletBounds());
   PlanUI.init(map);
+  MC.init();          // "Send to Minecraft" button (only shows on the Minecraft computer)
 
   const readout = document.getElementById("readout");
   map.on("mousemove", (e) => { readout.innerHTML = describeCell(e.latlng.lat, e.latlng.lng); });

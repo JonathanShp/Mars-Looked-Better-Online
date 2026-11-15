@@ -17,6 +17,12 @@ Click a station pin to see its card: which rock, why go there, what to do.
 **▶ Demo** plays the whole story by itself in about 29 s (used for the video, see `docs/video-script.md`).
 Works on phones too (panels fold; tap the map for the readout).
 
+## Walk it in Minecraft (extra)
+
+`minecraft/` builds a true-scale Minecraft world of Jezero (1 block = 10 m) from the same NASA grids.
+The website's **⛏ Send to Minecraft** button then builds your route there: glowing arrows, station beacons and the cuff as a book.
+See [minecraft/README.md](minecraft/README.md).
+
 ## Rebuild the data (only needed if you change the prep scripts)
 
 ```bash
