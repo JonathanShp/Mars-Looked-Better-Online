@@ -1,7 +1,8 @@
 # make_world.py - builds a Minecraft (Java 1.21.1) world of Jezero Crater
 # from the SAME NASA data the website uses.
 #
-#   python minecraft/make_world.py     -> %USERPROFILE%/MarsCuffMinecraft/server/world/  (~10 min, ~1.5 GB)
+#   python minecraft/make_world.py --save "<game dir>/saves/MarsCuff Jezero"   (mcmcp: an existing, CLOSED save)
+#   python minecraft/make_world.py     -> %USERPROFILE%/MarsCuffMinecraft/server/world/  (~2 min, ~1.5 GB)
 #
 # What it makes (true scale: 1 block = 1 m, 10 km x 10 km, see jezero_map.py):
 #   * ground height  : USGS CTX DTM (web/data/grid.bin), smoothed between 40 m cells
@@ -283,9 +284,9 @@ def write_datapack():
 
 
 # ---------------------------------------------------------------- main
-def _init_worker(tracks):
-    global _TRACKS
-    _TRACKS = tracks
+def _init_worker(tracks, out):
+    global _TRACKS, OUT
+    _TRACKS, OUT = tracks, out
 
 
 def make_region(rxz):
@@ -307,9 +308,17 @@ def make_region(rxz):
 
 
 def main():
+    global OUT
     from multiprocessing import Pool, cpu_count
     t0 = time.time()
-    if os.path.exists(os.path.join(OUT, "level.dat")):
+    # --save "<.minecraft>/saves/<world>": write the terrain into an existing singleplayer save
+    # (made with mcmcp's create_world, then CLOSED). Only its region files are replaced.
+    into_save = "--save" in sys.argv
+    if into_save:
+        OUT = sys.argv[sys.argv.index("--save") + 1]
+        if not os.path.exists(os.path.join(OUT, "level.dat")):
+            sys.exit(f"{OUT} is not a Minecraft save (no level.dat). Create the world first.")
+    elif os.path.exists(os.path.join(OUT, "level.dat")):
         sys.exit(f"{OUT} already has a world (level.dat). Move it away first if you want a fresh one.")
     os.makedirs(os.path.join(OUT, "region"), exist_ok=True)
     print(f"1/3 Jezero area: {jm.describe()['area']} = {jm.WIDTH} x {jm.HEIGHT} blocks (1 block = 1 m)")
@@ -321,19 +330,20 @@ def main():
                       for cz in range(cza, cza + jm.HEIGHT // 16)})
     workers = max(1, cpu_count() - 2)
     print(f"2/3 writing {len(regions)} region files with {workers} workers (a few minutes) ...")
-    with Pool(workers, initializer=_init_worker, initargs=(tracks,)) as pool:
+    with Pool(workers, initializer=_init_worker, initargs=(tracks, OUT)) as pool:
         for k, _ in enumerate(pool.imap_unordered(make_region, regions), 1):
             if k % 20 == 0 or k == len(regions):
                 print(f"  {k}/{len(regions)} regions ({time.time() - t0:.0f} s)", flush=True)
 
     print("3/3 data pack + map info ...")
-    write_datapack()
+    if not into_save:
+        write_datapack()        # 1.21.1 server only; with mcmcp the bridge sets gravity etc. by command
     info = jm.describe()
     lat, lon = jm.landing_site()
     lx, lz = jm.block_of_latlon(lat, lon)
     info["landing_site"] = {"lat": lat, "lon": lon, "x": lx, "z": lz,
                             "y": jm.ground_y(jm.load_elevation(), lx, lz) + 1}
-    json.dump(info, open(os.path.join(jm.SERVER_DIR, "world_info.json"), "w"), indent=1)
+    json.dump(info, open(os.path.join(OUT if into_save else jm.SERVER_DIR, "world_info.json"), "w"), indent=1)
     print(f"done in {time.time() - t0:.0f} s -> {OUT}")
 
 

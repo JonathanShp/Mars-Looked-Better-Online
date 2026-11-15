@@ -17,7 +17,7 @@ The website plans a Marswalk. This folder lets you **walk it in Minecraft**:
 | Surface colour = bedrock unit (red sand = not mapped) | Stack et al. 2020 geologic map (`web/data/units.bin`) |
 | Bare rock on slopes over 15° | Same slope grid the website uses to block routes |
 | Brown line | Perseverance traverse to sol 2022, NASA/JPL MMGIS |
-| Butterscotch sky, no rain, no mobs | Data pack in the world |
+| Desert biome, no rain, no mobs, always noon | Game rules set by the bridge |
 | **Mars gravity: 0.378 × Earth** (jumps 2.6 × higher, falls are gentler) | NASA Mars Fact Sheet (3.71 m/s²) |
 
 The world is **10,000 × 10,000 blocks = 10 km × 10 km** of real Mars, centred on Perseverance's landing site (about 1.5 GB, built in about 1.5 minutes).
@@ -29,21 +29,22 @@ The times in the cuff book are always the real (modelled) ones.
 
 ## Start it (on the computer that has Minecraft)
 
-Double-click **`Start MarsCuff Minecraft.bat`**. The first time it:
-1. builds the world (about 2 minutes, 1.5 GB of disk; needs Python with `numpy`);
-2. finds Java 21. The normal Minecraft Launcher already installs it once you've played 1.21.1;
-3. downloads the **official** Minecraft 1.21.1 server from Mojang and checks its SHA-1 fingerprint;
-4. asks **you** to agree to the Minecraft EULA. It never agrees for you.
+You need: Minecraft with the **mcmcp** mod, and Python with `numpy`.
 
-Then, in **Minecraft 1.21.1**, go to Multiplayer → Direct Connection → `localhost`. The website opens at http://localhost:8770.
-To stop, type `stop` in the window and press Enter. This saves the world.
+1. Open Minecraft (the title screen is fine).
+2. Double-click **`Start MarsCuff Minecraft.bat`**.
+   - **First time only:** the mod makes an empty world called **MarsCuff Jezero**, closes it, and the real Jezero ground is written into it (about 2 minutes, about 1.5 GB). Then the mod opens it and you're standing at Perseverance's landing site.
+   - **Later:** just open the **MarsCuff Jezero** world in Minecraft.
+3. The website opens at http://localhost:8770. Plan a walk inside the yellow square and press **⛏ Send to Minecraft**.
 
-The server and the bridge only listen on this computer (127.0.0.1). The remote-command password is random and stays in `server.properties` on this PC. It is never put in the repo.
-The world is saved in `%USERPROFILE%\MarsCuffMinecraft\server`, outside OneDrive, because OneDrive locks world files while it syncs.
+To stop, close the black window.
+
+Nothing is downloaded and there is no server to install. The mod's secret key is read from `.minecraft\config\mcmcp.json` on that PC only. It is never put in the repo or the website.
+The website bridge only listens on this computer (127.0.0.1).
 
 ## Files
 - `jezero_map.py`: how Mars coordinates turn into blocks (shared by everything below)
-- `make_world.py`: writes the Minecraft region files directly from the NASA grids
-- `bridge.py`: serves the website and builds the route through RCON and a data-pack function
+- `make_world.py`: writes the Minecraft region files directly from the NASA grids (`--save <world folder>`)
+- `bridge.py`: serves the website and builds the route through the mcmcp mod (`build_structure` + commands)
 - `start.py`: the one-click setup above
 - `web/js/minecraft.js`: the website's "Send to Minecraft" button (shown only at localhost:8770)
