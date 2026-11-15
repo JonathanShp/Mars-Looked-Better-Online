@@ -271,11 +271,11 @@ def load_chunks(mcp, spots):
 
 def summon_label(mcp, x, y, z, title, lines, colour, errors):
     """A floating sign, in 4 short commands (each must fit in 256 characters)."""
-    sel = "@e[type=minecraft:text_display,tag=mc_new,limit=1]"
+    sel = "@n[type=minecraft:text_display,tag=mc_new]"       # @n = nearest one (tested in 26.3)
     steps = [
         f"summon minecraft:text_display {x + 0.5} {y} {z + 0.5} {{Tags:[\"marscuff_route\",\"mc_new\"],"
         "billboard:\"center\",view_range:16f,brightness:{sky:15,block:15},background:-1610612736}",
-        f"data merge entity {sel} {{line_width:240,transformation:[4f,0f,0f,0f,0f,4f,0f,0f,0f,0f,4f,0f,0f,0f,0f,1f]}}",
+        f"data merge entity {sel} {{line_width:240,transformation:{{scale:[4f,4f,4f]}}}}",   # 4x bigger
     ]
     body = "\n".join(lines)
     while True:
@@ -313,7 +313,7 @@ def give_cuff_book(mcp, pages, errors):
 def mars_rules(mcp):
     """Always day, clear sky, no mobs, Mars gravity. Gamerule names changed across versions, so try both."""
     for new, old, value in [("advance_time", "doDaylightCycle", "false"), ("advance_weather", "doWeatherCycle", "false"),
-                            ("spawn_mobs", "doMobSpawning", "false"), ("spawn_radius", "spawnRadius", "0")]:
+                            ("spawn_mobs", "doMobSpawning", "false"), ("respawn_radius", "spawnRadius", "0")]:
         if not mcp.cmd(f"gamerule {new} {value}")[0]:
             mcp.cmd(f"gamerule {old} {value}")
     # Mars g = 3.71 m/s^2 = 0.378 x Earth (NASA Mars Fact Sheet). Minecraft's gravity 0.08 x 0.378 = 0.0302.
