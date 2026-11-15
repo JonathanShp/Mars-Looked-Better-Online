@@ -88,6 +88,30 @@ const Cuff = {
     return canvas;
   },
 
+  // How many printed lines a job takes, so we know where to break the pages.
+  // About 58 characters of the small type fit on one line of a 3 inch page.
+  jobLines(t) {
+    const wrap = (text) => Math.ceil(text.length / 58);
+    return 2 + wrap(`Stands in for ${t.stands_for}.`) + wrap(`Where: ${t.where}`)
+      + t.steps.reduce((n, step) => n + wrap(step), 0) + wrap(t.source) + 1;
+  },
+
+  // Deal the jobs onto step pages: keep adding jobs until the next one would run
+  // off the bottom of the page, then start a new one. No job is ever cut in half.
+  // 34 lines is what measured in the browser: two typical jobs per page, with room
+  // to spare, and never a job split across two pages.
+  stepPages(tasks, linesPerPage = 34) {
+    const pages = [[]];
+    let used = 0;
+    tasks.forEach((t) => {
+      const need = this.jobLines(t);
+      if (used && used + need > linesPerPage) { pages.push([]); used = 0; }
+      pages[pages.length - 1].push(t);
+      used += need;
+    });
+    return pages;
+  },
+
   // Build all cuff pages as HTML inside #cuff.
   build() {
     const res = Plan.result;
@@ -112,9 +136,23 @@ const Cuff = {
       <p><b>${res.pnr ? `POINT OF NO RETURN: ${hm(res.pnr.clock)}` : "NO PNR ON THIS PLAN"}</b><br>
       Total ${hm(res.totalSeconds)} · usable ${hm(res.usable)} of ${MODELS.evaBudgetHours}:00</p>
       <p class="cuff-small">MODEL: Tobler hiking fn × ${MODELS.suitFactor} suit (team), ${MODELS.stationWorkMinutes} min/station (team),
-      8 h EVA (NASA surface ConOps), ${MODELS.reserveFraction * 100}% reserve (team).</p>`);
+      8 h EVA (NASA surface ConOps), ${MODELS.reserveFraction * 100}% reserve (team).<br>
+      Jobs marked IF TIME are the ones to drop first when a station runs long.</p>`);
 
-    // Station pages
+    // The habitat page: the weather reading you take before you leave and again
+    // when you get back, so the whole walk has a before and after.
+    const hp = Science.habitatProtocol;
+    page("AT THE HABITAT", `
+      <p class="cuff-unit">${hp.title} · ${hp.minutes} min, twice</p>
+      <p class="cuff-small">Stands in for ${hp.stands_for}.</p>
+      <p><b>Where:</b> ${hp.where}</p>
+      <ol class="cuff-steps">${hp.steps.map((x) => `<li>${x}</li>`).join("")}</ol>
+      <p class="cuff-small">${hp.source}</p>`);
+
+    // Station pages. Each station gets a BRIEF page (where you are, when you must
+    // leave, why this spot is worth the walk, the list of jobs) and then one or more
+    // STEPS pages with those jobs written out. Splitting them is what keeps every
+    // page inside the printed 3 x 5 inch card, like the Apollo cuff books.
     st.forEach((d, k) => {
       const e = res.events.find((ev) => ev.station === k && ev.what.startsWith("Arrive"));
       const flags = [
@@ -122,16 +160,32 @@ const Cuff = {
         d.neverDriven ? "★ UNIT PERSEVERANCE NEVER DROVE ON" : "",
         e.beyondPnr ? "✖ BEYOND POINT OF NO RETURN - SKIP" : "",
       ].filter(Boolean).map((f) => `<div class="cuff-flag">${f}</div>`).join("");
-      const tasks = d.tasks.length
-        ? d.tasks.map((t) => `<li><b>${t.task}</b><br><span class="cuff-small">Gap: ${t.gap}</span></li>`).join("")
-        : "<li>No orbital gap scored here (Question 0/3). Consider moving this station.</li>";
+      // Why this spot is worth suit time: each open question once, not under every job.
+      const seen = new Set();
+      const why = d.tasks.filter((t) => !t.baseline && !seen.has(t.signal) && seen.add(t.signal))
+        .map((t) => `<li><b>${t.signal}.</b> ${t.gap}</li>`).join("")
+        || "<li>No orbital gap scored here: orbit already sees this spot well. "
+           + "Only the two baseline jobs apply, so consider moving this station.</li>";
+      const jobs = d.tasks.map((t, i) =>
+        `<tr><td>${i + 1}</td><td>${t.title}${t.optional ? " <b>IF TIME</b>" : ""}</td><td>${t.minutes}m</td></tr>`).join("");
       page(`STATION ${k + 1}`, `
         <p class="cuff-unit">${d.unit || "Unmapped unit"}</p>
-        <p>Arrive ${hm(e.t)} · work ${MODELS.stationWorkMinutes} min · leave by ${hm(e.turnBackBy)}</p>
+        <p>Arrive ${hm(e.t)} · leave by ${hm(e.turnBackBy)}</p>
         ${flags}
-        <ol class="cuff-tasks">${tasks}</ol>
-        <p class="cuff-small">Question ${d.question.score}/3 · science value ${d.value} ·
-        ${d.latlon.lat.toFixed(4)}°N ${d.latlon.lon.toFixed(4)}°E · ${d.elevation} m · slope ${d.slope.toFixed(1)}°</p>`);
+        <p class="cuff-small"><b>WHY HERE</b></p><ul class="cuff-why">${why}</ul>
+        <table class="cuff-table">${jobs}</table>
+        <p class="cuff-small">${d.coreMinutes} min of must-do work against the ${d.budgetMinutes} min booked here${
+          d.extraMinutes ? `, plus ${d.extraMinutes} min if the clock allows` : ""} ·
+        Question ${d.question.score}/3 · value ${d.value} · ${d.elevation} m · slope ${d.slope.toFixed(1)}° ·
+        ${d.latlon.lat.toFixed(4)}°N ${d.latlon.lon.toFixed(4)}°E</p>`);
+      const groups = this.stepPages(d.tasks);
+      groups.forEach((group, i) => page(`STA ${k + 1} STEPS ${i + 1}/${groups.length}`,
+        group.map((t) => `<div class="cuff-job">
+          <b>${t.title}</b> · ${t.minutes} min${t.optional ? " · IF TIME" : ""}
+          <div class="cuff-small">Stands in for ${t.stands_for}.</div>
+          <div class="cuff-where"><b>Where:</b> ${t.where}</div>
+          <ol class="cuff-steps">${t.steps.map((x) => `<li>${x}</li>`).join("")}</ol>
+          <div class="cuff-small">${t.source}</div></div>`).join("")));
     });
 
     // Emergency page: shortest walk home from each station (computed), plus team rules.

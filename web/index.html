@@ -26,6 +26,34 @@
       <button id="btn-minecraft" hidden>⛏ Send to Minecraft</button>
     </div>
     <div id="plan-out">Loading NASA data…</div>
+    <!-- How to walk the plan in Minecraft. Plain text, closed by default, so it is
+         there for anyone who wants it without getting in the way of planning. -->
+    <details id="mc-setup">
+      <summary>⛏ Walk this in Minecraft — how to set it up</summary>
+      <p>The walk you plan here can be built as real Jezero ground in Minecraft Java Edition,
+        <b>1 block = 1 metre</b> of Mars, sideways and up. Block 0,0 is Perseverance's landing site.</p>
+      <ol>
+        <li>On the computer with Minecraft, open the game (the title screen is fine) and run
+          <b>Start MarsCuff Minecraft.bat</b> (it needs the <b>mcmcp</b> mod and Python with
+          <code>numpy</code>). The first run makes a world called <b>MarsCuff Jezero</b> holding a
+          3 km disc of ground around the landing site — about a minute.</li>
+        <li>It opens this page again at <code>http://localhost:8770</code>. There the
+          <b>⛏ Send to Minecraft</b> button appears, and the ground that would be built is
+          shaded yellow along your route.</li>
+        <li>Plan a walk anywhere on the map and press that button. Minecraft closes, the ground
+          along your route is written, and it opens again (30–60 s) with you in the habitat:
+          glowing arrows for the route, beams for home, the stations and the Point of No Return,
+          and the cuff as a written book in your hand.</li>
+      </ol>
+      <p><b>Why the world stops at the edge:</b> only the ground near your walk is built —
+        500 m either side of the line, 800 m around the habitat and each station, about 100 MB a
+        walk. The whole 900 km² map at 1 m per block would be some 14 GB. Plan a different walk
+        and send it again to get different ground.</p>
+      <p>No mod on the other computer? A built world zips up as an ordinary save with a
+        HOW-TO-USE.txt inside:
+        <code>make_world.py --route plan.json --save &lt;save&gt; --zip MarsCuff.zip</code>.
+        Details in <code>minecraft/README.md</code>.</p>
+    </details>
   </div>
   <div id="cuff-viewer">
     <button id="btn-close-cuff">Back to map</button>

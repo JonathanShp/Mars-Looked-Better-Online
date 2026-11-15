@@ -1,22 +1,35 @@
-# make_world.py - builds a Minecraft (Java 1.21.1) world of Jezero Crater
-# from the SAME NASA data the website uses.
+# make_world.py - builds a Minecraft world of Jezero Crater from the SAME NASA
+# data the website uses, but ONLY along the walk the user planned.
 #
-#   python minecraft/make_world.py --save "<game dir>/saves/MarsCuff Jezero"   (mcmcp: an existing, CLOSED save)
-#   python minecraft/make_world.py     -> %USERPROFILE%/MarsCuffMinecraft/server/world/  (~2 min, ~1.5 GB)
+# Why a corridor and not a big square: the full CTX map is 30 x 30 km. Writing
+# all of it is ~14 GB and most of it is ground nobody will ever walk on. So we
+# take the planned route, draw a 500 m band either side of it (800 m around the
+# habitat and each station), and build only the chunks that fall in that band.
+# A typical 8 km EVA comes out around 30 region files instead of 400.
 #
-# What it makes (true scale: 1 block = 1 m, 10 km x 10 km, see jezero_map.py):
-#   * ground height  : USGS CTX DTM (web/data/grid.bin), smoothed between 40 m cells
-#                      (hills are smooth: the data has no detail smaller than 40 m)
-#   * surface colour : bedrock unit from Stack et al. 2020 (web/data/units.bin);
-#                      outside their map = red sand (rock type unknown)
-#   * steep ground   : > 15 deg (the website's "blocked" slope) shows bare rock
+# Three ways to run it:
+#   python minecraft/make_world.py --route plan.json --save "<game dir>/saves/MarsCuff Jezero"
+#       terrain for that route, written into an existing CLOSED save (this is what the bridge does)
+#   python minecraft/make_world.py --route plan.json --zip "MarsCuff-Jezero.zip"
+#       a finished world folder zipped up, with HOW-TO-USE.txt inside, to hand to someone
+#   python minecraft/make_world.py
+#       no route: a 1.5 km demo disc around Perseverance's landing site
+#
+# What the terrain is made of (true scale: 1 block = 1 m, see jezero_map.py):
+#   * ground height  : USGS CTX DTM (web/data/grid.bin), smoothed between 40 m cells,
+#                      plus the procedural detail in surface.py (the DTM has nothing
+#                      finer than 40 m, so without it the ground is glassy smooth)
+#   * surface rock   : bedrock unit from Stack et al. 2020 (web/data/units.bin)
+#   * loose rocks    : boulder field density per unit (surface.py)
 #   * rover tracks   : Perseverance traverse (web/data/traverse.geojson)
 #   * Mars sky       : a data pack makes the sky butterscotch, no rain, no mobs
 #
 # How a Minecraft world file works (short version): the world is cut into
 # 16x16 "chunks"; 32x32 chunks are stored in one ".mca" region file; each chunk
 # is a small tree of named values ("NBT"), zipped. We write those files directly.
+# That can only be done while the world is CLOSED.
 
+import argparse
 import io
 import json
 import math
@@ -24,44 +37,29 @@ import os
 import struct
 import sys
 import time
+import zipfile
 import zlib
 
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import jezero_map as jm
+import surface
+from surface import BLOCKS, ID, LAYER_STRIPES
 
 OUT = os.path.join(jm.SERVER_DIR, "world")
 REGION = os.path.join(OUT, "region")        # where the .mca files go (see region_dir)
 DATA_VERSION = 3955          # Minecraft 1.21.1
-PACK_FORMAT = 48             # data pack format for 1.21.1
+PACK_FORMAT = 121            # data pack format for Minecraft 26.3
+                             # (SharedConstants.DATA_PACK_FORMAT_MAJOR). Packs past
+                             # format 81 must say min_format/max_format.
 
-# ---------------------------------------------------------------- blocks
-BLOCKS = ["air", "bedrock", "smooth_basalt", "red_sandstone", "red_sand",
-          "terracotta", "brown_terracotta", "orange_terracotta", "white_terracotta",
-          "light_gray_terracotta", "yellow_terracotta", "red_terracotta", "packed_mud"]
-ID = {name: i for i, name in enumerate(BLOCKS)}
-
-# Surface block for each Stack et al. 2020 unit id (see web/data/units.json).
-# The colours are OUR choice so the units can be told apart; Mars is dusty
-# red-brown everywhere, so we stay in red/orange/brown tones.
-UNIT_TOP = {
-    0: "red_sand",                                            # not mapped
-    1: "brown_terracotta", 2: "brown_terracotta",             # crater floor fractured 1, 2 (darker)
-    3: "terracotta",                                          # crater floor fractured rough
-    4: "orange_terracotta", 5: "orange_terracotta",           # crater rim
-    6: "orange_terracotta", 7: "orange_terracotta",
-    8: "brown_terracotta",                                    # delta blocky
-    9: "yellow_terracotta",                                   # delta layered rough
-    10: "white_terracotta", 11: "white_terracotta",           # delta thickly / thinly layered
-    12: "light_gray_terracotta",                              # delta truncated curvilinear
-    13: "yellow_terracotta",                                  # margin fractured
-    14: "red_terracotta",                                     # Neretva Vallis layered
-    15: "orange_terracotta",                                  # Nili Planum fractured
-}
-LAYERED_UNITS = {9, 10, 11, 12, 14}   # "layered" units show stripes in their cliffs
-LAYER_STRIPES = ["white_terracotta", "orange_terracotta", "light_gray_terracotta", "terracotta"]
-STEEP_TENTHS = 150                    # 15.0 deg = the website's "blocked" slope
+CORRIDOR_RADIUS_M = 500.0    # how far either side of the walking line we build
+STATION_RADIUS_M = 800.0     # a wider bubble around the habitat, each station and the PNR
+DEMO_RADIUS_M = 1500.0       # no route given: a disc this big around the landing site
+SAMPLE_STEP_M = 60.0         # the route line is sampled this often before drawing discs
+STEEP_TENTHS = 150           # 15.0 deg = the website's "blocked" slope
+MARKER = "marscuff_terrain.json"   # records which route a save was built for
 
 
 # ---------------------------------------------------------------- 1. block columns for one piece of the map
@@ -74,21 +72,19 @@ def _grids():
         n = jm.ROWS * jm.COLS
         raw = np.fromfile(os.path.join(jm.DATA, "grid.bin"), dtype="<i2", count=2 * n)
         _G["elev"] = raw[:n].reshape(jm.ROWS, jm.COLS).astype(np.float64)
-        _G["slope"] = raw[n:].reshape(jm.ROWS, jm.COLS)
-        _G["units"] = np.fromfile(os.path.join(jm.DATA, "units.bin"), dtype=np.uint8).reshape(jm.ROWS, jm.COLS)
-        _G["lut"] = np.array([ID[UNIT_TOP.get(k, "red_sand")] for k in range(256)], dtype=np.uint8)
+        _G["slope"] = raw[n:].reshape(jm.ROWS, jm.COLS).astype(np.float64) / 10.0
+        _G["units"] = np.fromfile(os.path.join(jm.DATA, "units.bin"),
+                                  dtype=np.uint8).reshape(jm.ROWS, jm.COLS)
     return _G
 
 
-def columns(x0, z0, w, h, tracks=None):
-    """For each block column in [x0, x0+w) x [z0, z0+h): ground y, top block id, 'layered' flag."""
+def grid_at(xs, zs):
+    """NASA elevation (smoothed), slope in degrees and unit id for a block grid."""
     g = _grids()
-    xs = np.arange(x0, x0 + w)
-    zs = np.arange(z0, z0 + h)
-    col_f = (jm.E0 + (xs - jm.X_MIN + 0.5) * jm.M_PER_BLOCK) / jm.DX_CELL   # same maths as jezero_map.cell_coords
-    row_f = (jm.S0 + (zs - jm.Z_MIN + 0.5) * jm.M_PER_BLOCK) / jm.DZ_CELL
+    col_f, row_f = jm.cell_coords(np.asarray(xs, dtype=np.float64),
+                                  np.asarray(zs, dtype=np.float64))
 
-    # Bilinear smoothing between cell centres (same order of operations as ground_y()).
+    # Bilinear smoothing between cell centres (same order of operations as jm.elevation_at).
     u = np.clip(col_f - 0.5, 0.0, jm.COLS - 1.0)
     v = np.clip(row_f - 0.5, 0.0, jm.ROWS - 1.0)
     c0 = np.minimum(u.astype(int), jm.COLS - 2); tu = u - c0
@@ -96,28 +92,131 @@ def columns(x0, z0, w, h, tracks=None):
     elev = g["elev"]
     e00 = elev[np.ix_(r0, c0)]; e01 = elev[np.ix_(r0, c0 + 1)]
     e10 = elev[np.ix_(r0 + 1, c0)]; e11 = elev[np.ix_(r0 + 1, c0 + 1)]
-    top = e00 * (1 - tu) + e01 * tu
-    bot = e10 * (1 - tu) + e11 * tu
-    e = top * (1 - tv[:, None]) + bot * tv[:, None]
-    ground = (jm.Y_BASE + np.floor((e - jm.ELEV_BASE_M) / jm.M_PER_BLOCK + 0.5)).astype(np.int16)
+    upper = e00 * (1 - tu) + e01 * tu
+    lower = e10 * (1 - tu) + e11 * tu
+    e = upper * (1 - tv[:, None]) + lower * tv[:, None]
 
     # Nearest cell for slope + geology (no smoothing: a unit is a unit).
     ci = np.minimum(col_f.astype(int), jm.COLS - 1)
     ri = np.minimum(row_f.astype(int), jm.ROWS - 1)
-    unit = g["units"][np.ix_(ri, ci)]
-    steep = g["slope"][np.ix_(ri, ci)] > STEEP_TENTHS
-    top_block = g["lut"][unit]
-    top_block[steep & (unit == 0)] = ID["terracotta"]          # bare rock on steep unmapped slopes
-    layered = np.isin(unit, list(LAYERED_UNITS))
+    return e, g["slope"][np.ix_(ri, ci)], g["units"][np.ix_(ri, ci)]
+
+
+def columns(x0, z0, w, h, tracks=None):
+    """For each block column in [x0, x0+w) x [z0, z0+h):
+    ground y, surface block, block just under it, boulder block (0 = none), layered flag."""
+    xs = np.arange(x0, x0 + w)
+    zs = np.arange(z0, z0 + h)
+    e, slope, unit = grid_at(xs, zs)
+    e, top, under, boulder, layered = surface.detail(xs, zs, e, slope, unit)
+
+    ground = (jm.Y_BASE + np.floor((e - jm.ELEV_BASE_M) / jm.M_PER_BLOCK + 0.5)).astype(np.int16)
+    # Keep everything inside the world: nothing below bedrock, nothing above the build limit.
+    ground = np.clip(ground, jm.Y_BASE - 8, jm.Y_MAX - 4).astype(np.int16)
 
     if tracks is not None and len(tracks):
-        sel = (tracks[:, 0] >= x0) & (tracks[:, 0] < x0 + w) & (tracks[:, 1] >= z0) & (tracks[:, 1] < z0 + h)
-        top_block[tracks[sel, 1] - z0, tracks[sel, 0] - x0] = ID["packed_mud"]
-    return ground, top_block, layered
+        sel = (tracks[:, 0] >= x0) & (tracks[:, 0] < x0 + w) & \
+              (tracks[:, 1] >= z0) & (tracks[:, 1] < z0 + h)
+        tz = tracks[sel, 1] - z0
+        tx = tracks[sel, 0] - x0
+        top[tz, tx] = ID["packed_mud"]      # the wheels pressed the dust flat
+        boulder[tz, tx] = 0                 # and crushed the small rocks
+    return ground, top, under, boulder, layered
 
 
-def rover_track_blocks(width=3):
-    """Block positions of the Perseverance traverse inside the area, `width` blocks (metres) wide."""
+# ---------------------------------------------------------------- 2. the corridor
+def route_points(plan):
+    """Centres of the discs that make up the corridor: (x, z, radius_m).
+
+    plan is the JSON the website posts (see web/js/minecraft.js): a path of
+    [row, col, clockSeconds] grid cells, plus the habitat, stations and the PNR.
+    """
+    pts = []
+
+    def add(row, col, radius):
+        x, z = jm.block_of_cell(row, col)
+        pts.append((float(x), float(z), float(radius)))
+
+    path = plan.get("path") or []
+    cells = [(p[0], p[1]) for p in path]
+    if len(cells) >= 2:
+        # Walk the line and drop a disc every SAMPLE_STEP_M, so bends stay covered.
+        blocks = [jm.block_of_cell(r, c) for r, c in cells]
+        carry = SAMPLE_STEP_M      # always place one at the very start
+        for (x0, z0), (x1, z1) in zip(blocks, blocks[1:]):
+            seg = math.hypot(x1 - x0, z1 - z0)
+            if seg < 1e-6:
+                continue
+            while carry <= seg:
+                t = carry / seg
+                pts.append((x0 + (x1 - x0) * t, z0 + (z1 - z0) * t, CORRIDOR_RADIUS_M))
+                carry += SAMPLE_STEP_M
+            carry -= seg
+        pts.append((float(blocks[-1][0]), float(blocks[-1][1]), CORRIDOR_RADIUS_M))
+    elif len(cells) == 1:
+        add(cells[0][0], cells[0][1], STATION_RADIUS_M)
+
+    hab = plan.get("habitat")
+    if hab:
+        add(hab["row"], hab["col"], STATION_RADIUS_M)
+    for st in plan.get("stations") or []:
+        add(st["row"], st["col"], STATION_RADIUS_M)
+    pnr = plan.get("pnr")
+    if pnr:
+        add(pnr["row"], pnr["col"], STATION_RADIUS_M)
+
+    if not pts:
+        return demo_points()
+    return pts
+
+
+def demo_points():
+    """No route: one disc around the landing site, so there is something to walk in."""
+    return [(0.0, 0.0, DEMO_RADIUS_M)]
+
+
+def corridor_chunks(points):
+    """Chunk coordinates (cx, cz) whose centre falls inside any of the discs."""
+    keep = set()
+    for x, z, radius in points:
+        reach = radius + 12.0        # a chunk centre can be ~11.3 m from its nearest corner
+        cx0 = int(math.floor((x - reach) / 16.0)); cx1 = int(math.ceil((x + reach) / 16.0))
+        cz0 = int(math.floor((z - reach) / 16.0)); cz1 = int(math.ceil((z + reach) / 16.0))
+        cxs = np.arange(cx0, cx1 + 1)
+        czs = np.arange(cz0, cz1 + 1)
+        # Chunk centre in blocks, then distance to this disc centre.
+        dx = cxs * 16.0 + 8.0 - x
+        dz = czs * 16.0 + 8.0 - z
+        hit = (dx[None, :] ** 2 + dz[:, None] ** 2) <= reach ** 2
+        for iz, ix in zip(*np.nonzero(hit)):
+            cx, cz = int(cxs[ix]), int(czs[iz])
+            # Outside the NASA grid we have no data, so do not build there.
+            if jm.on_map(cx * 16 + 8, cz * 16 + 8, margin_m=12.0):
+                keep.add((cx, cz))
+    return sorted(keep)
+
+
+def corridor_bounds(chunks):
+    """Block box [x_min, z_min, x_max, z_max] that holds every chunk we build."""
+    cx = [c[0] for c in chunks]; cz = [c[1] for c in chunks]
+    return [min(cx) * 16, min(cz) * 16, max(cx) * 16 + 15, max(cz) * 16 + 15]
+
+
+def corridor_relief(chunks):
+    """Lowest and highest NASA elevation (metres) in the corridor, sampled at chunk centres."""
+    xs = np.array([c[0] * 16 + 8 for c in chunks], dtype=np.float64)
+    zs = np.array([c[1] * 16 + 8 for c in chunks], dtype=np.float64)
+    g = _grids()
+    col_f, row_f = jm.cell_coords(xs, zs)
+    ci = np.minimum(col_f.astype(int), jm.COLS - 1)
+    ri = np.minimum(row_f.astype(int), jm.ROWS - 1)
+    e = g["elev"][ri, ci]
+    return float(e.min()), float(e.max())
+
+
+def rover_track_blocks(chunks, width=3):
+    """Block positions of the Perseverance traverse that fall inside the corridor."""
+    want = set(chunks)
     t = json.load(open(os.path.join(jm.DATA, "traverse.geojson")))
     centres = []
     for f in t["features"]:
@@ -126,9 +225,9 @@ def rover_track_blocks(width=3):
         for line in lines:
             pts = [jm.block_of_latlon(lat, lon) for lon, lat, *_ in line]
             for (x0, z0), (x1, z1) in zip(pts, pts[1:]):
-                if not (jm.inside(x0, z0) or jm.inside(x1, z1)):
-                    continue
                 steps = max(abs(x1 - x0), abs(z1 - z0), 1)
+                if steps > 4000:          # a jump across the map: not a real drive segment
+                    continue
                 s = np.arange(steps + 1)
                 centres.append(np.stack([np.round(x0 + (x1 - x0) * s / steps),
                                          np.round(z0 + (z1 - z0) * s / steps)], 1).astype(np.int32))
@@ -138,12 +237,12 @@ def rover_track_blocks(width=3):
     r = range(-(width // 2), width - width // 2)
     off = np.array([(dx, dz) for dx in r for dz in r], np.int32)
     pts = np.unique((c[:, None, :] + off[None]).reshape(-1, 2), axis=0)
-    keep = (pts[:, 0] >= jm.X_MIN) & (pts[:, 0] < jm.X_MIN + jm.WIDTH) & \
-           (pts[:, 1] >= jm.Z_MIN) & (pts[:, 1] < jm.Z_MIN + jm.HEIGHT)
-    return pts[keep]
+    # Keep only the track blocks in chunks we are actually writing.
+    in_corridor = np.array([((int(x) >> 4), (int(z) >> 4)) in want for x, z in pts], dtype=bool)
+    return pts[in_corridor]
 
 
-# ---------------------------------------------------------------- 2. tiny NBT writer
+# ---------------------------------------------------------------- 3. tiny NBT writer
 # Each value is written as (tag type, value). Only the types a chunk needs.
 def _str(s):
     b = s.encode("utf-8")
@@ -175,7 +274,7 @@ def nbt_root(compound):
     return bytes([10]) + _str("") + nbt_payload("compound", compound)
 
 
-# ---------------------------------------------------------------- 3. one chunk
+# ---------------------------------------------------------------- 4. one chunk
 def pack_indices(idx, bits):
     """Pack 4096 palette indices into 64-bit longs (Minecraft 1.16+ layout: no index spans two longs)."""
     per = 64 // bits
@@ -188,18 +287,25 @@ def pack_indices(idx, bits):
 
 DESERT = ("compound", {"palette": ("list", ("string", ["minecraft:desert"]))})
 
-def chunk_nbt(cx, cz, ground, top_block, layered):
-    """ground/top_block/layered: 16x16 arrays [z, x] for this chunk."""
-    max_y = int(ground.max())
-    ys = np.arange(-64, (max_y // 16 + 1) * 16)[:, None, None]       # y, z, x
-    depth = ground[None] - ys                                         # 0 = surface block
+def chunk_nbt(cx, cz, ground, top_block, under, boulder, layered):
+    """All arguments except cx/cz are 16x16 arrays [z, x] for this chunk."""
+    max_y = int(ground.max()) + 1                                     # +1 leaves room for boulders
+    ys = np.arange(-64, (max_y // 16 + 1) * 16)[:, None, None]        # y, z, x
+    depth = ground[None] - ys                                         # 0 = surface block, -1 = just above
     blocks = np.full(depth.shape, ID["smooth_basalt"], dtype=np.uint8)
-    blocks[(depth >= 1) & (depth <= 3)] = ID["red_sandstone"]
+
+    # Broken rock under the surface, then strata in the layered units, then the surface itself.
+    shallow = (depth >= 1) & (depth <= 3)
+    blocks[shallow] = np.broadcast_to(under[None], depth.shape)[shallow]
     stripe = np.array([ID[s] for s in LAYER_STRIPES], dtype=np.uint8)[(ys % 4).repeat(16, 1).repeat(16, 2)]
     lay = layered[None] & (depth >= 1) & (depth <= 12)
     blocks[lay] = stripe[lay]
     blocks[depth == 0] = np.broadcast_to(top_block[None], depth.shape)[depth == 0]
+
+    # Loose rocks sitting ON the ground (one block up), then air above everything.
     blocks[depth < 0] = ID["air"]
+    rocks = (depth == -1) & (np.broadcast_to(boulder[None], depth.shape) > 0)
+    blocks[rocks] = np.broadcast_to(boulder[None], depth.shape)[rocks]
     blocks[ys[:, 0, 0] == -64] = ID["bedrock"]
 
     sections = []
@@ -212,7 +318,8 @@ def chunk_nbt(cx, cz, ground, top_block, layered):
             continue
         sec = blocks[s * 16:(s + 1) * 16].reshape(-1)                  # index = y*256 + z*16 + x
         pal, inv = np.unique(sec, return_inverse=True)
-        bs = {"palette": ("list", ("compound", [{"Name": ("string", "minecraft:" + BLOCKS[p])} for p in pal]))}
+        bs = {"palette": ("list", ("compound",
+                                   [{"Name": ("string", "minecraft:" + BLOCKS[p])} for p in pal]))}
         if len(pal) > 1:
             bits = max(4, math.ceil(math.log2(len(pal))))
             bs["data"] = ("long_array", pack_indices(inv.astype(np.uint64), bits))
@@ -231,7 +338,7 @@ def chunk_nbt(cx, cz, ground, top_block, layered):
     })
 
 
-# ---------------------------------------------------------------- 4. region files
+# ---------------------------------------------------------------- 5. region files
 def write_region(path, chunks):
     """chunks: {(local_x, local_z): nbt_bytes}. Region file = 8 KB table + 4 KB sectors."""
     locations = bytearray(4096)
@@ -253,107 +360,241 @@ def write_region(path, chunks):
         f.write(locations + stamps + body.getvalue())
 
 
-# ---------------------------------------------------------------- 5. data pack (Mars sky, no rain)
-def write_datapack():
-    root = os.path.join(OUT, "datapacks", "marscuff")
-    os.makedirs(os.path.join(root, "data", "minecraft", "worldgen", "biome"), exist_ok=True)
-    os.makedirs(os.path.join(root, "data", "marscuff", "function"), exist_ok=True)
-    json.dump({"pack": {"pack_format": PACK_FORMAT,
+# ---------------------------------------------------------------- 6. data pack (Mars sky, gravity, no rain)
+def write_datapack(root):
+    pack = os.path.join(root, "datapacks", "marscuff")
+    os.makedirs(os.path.join(pack, "data", "minecraft", "worldgen", "biome"), exist_ok=True)
+    os.makedirs(os.path.join(pack, "data", "marscuff", "function"), exist_ok=True)
+    json.dump({"pack": {"min_format": PACK_FORMAT, "max_format": PACK_FORMAT,
                         "description": "MarsCuff: Jezero Crater sky and rules"}},
-              open(os.path.join(root, "pack.mcmeta"), "w"), indent=1)
+              open(os.path.join(pack, "pack.mcmeta"), "w"), indent=1)
     # We change the vanilla "desert" biome, so if this pack ever fails to load
     # the world simply looks like a desert instead of breaking.
-    sky = 0xC9A27E   # butterscotch daytime Mars sky (colour picked by eye from rover photos)
+    #
+    # Minecraft 26.3 moved the sky and fog colours out of the biome's "effects"
+    # and into "attributes" (the new environment-attribute system); colours are
+    # "#RRGGBB" strings there, and "carvers" has to be a list.
     json.dump({
         "has_precipitation": False, "temperature": 2.0, "downfall": 0.0,
-        "effects": {"sky_color": sky, "fog_color": 0xD8B48C,
-                    "water_color": 0x3F76E4, "water_fog_color": 0x050533},
-        "spawners": {}, "spawn_costs": {}, "carvers": {}, "features": [],
-    }, open(os.path.join(root, "data", "minecraft", "worldgen", "biome", "desert.json"), "w"), indent=1)
+        "attributes": {
+            "minecraft:visual/sky_color": "#C9A27E",      # butterscotch Mars daytime sky
+            "minecraft:visual/fog_color": "#D8B48C",      # dusty haze (colours picked by eye
+            "minecraft:visual/fog_end_distance": 2048.0,  # from rover photos); see far, thin air
+        },
+        "effects": {"water_color": "#3F76E4"},
+        "carvers": [], "features": [],
+    }, open(os.path.join(pack, "data", "minecraft", "worldgen", "biome", "desert.json"), "w"), indent=1)
 
-    # Mars gravity, checked every game tick for everyone online.
+    # Mars gravity, checked every game tick for everyone online. A tick function runs
+    # as the server, not as a player, so each line needs "execute as @a run".
     # Mars g = 3.71 m/s^2 = 0.378 x Earth (NASA Mars Fact Sheet). Minecraft's normal
     # gravity value is 0.08, so Mars = 0.08 x 0.378 = 0.0302. Falls are gentler too:
     # the safe fall height (3 blocks) is divided by the same 0.378.
-    os.makedirs(os.path.join(root, "data", "minecraft", "tags", "function"), exist_ok=True)
+    os.makedirs(os.path.join(pack, "data", "minecraft", "tags", "function"), exist_ok=True)
     json.dump({"values": ["marscuff:tick"]},
-              open(os.path.join(root, "data", "minecraft", "tags", "function", "tick.json"), "w"))
-    with open(os.path.join(root, "data", "marscuff", "function", "tick.mcfunction"), "w") as f:
+              open(os.path.join(pack, "data", "minecraft", "tags", "function", "tick.json"), "w"))
+    with open(os.path.join(pack, "data", "marscuff", "function", "tick.mcfunction"), "w") as f:
         f.write("# Mars gravity (0.378 x Earth) for every player\n"
-                "execute as @a run attribute @s minecraft:generic.gravity base set 0.0302\n"
-                "execute as @a run attribute @s minecraft:generic.safe_fall_distance base set 7.9\n")
+                "execute as @a run attribute @s minecraft:gravity base set 0.0302\n"
+                "execute as @a run attribute @s minecraft:safe_fall_distance base set 7.9\n")
 
 
-# ---------------------------------------------------------------- main
+# ---------------------------------------------------------------- 7. building
 def region_dir(save):
     """Minecraft 26.x keeps the overworld in dimensions/minecraft/overworld/region; 1.21 uses region/."""
     new = os.path.join(save, "dimensions", "minecraft", "overworld")
     return os.path.join(new, "region") if os.path.isdir(new) else os.path.join(save, "region")
 
 
-def _init_worker(tracks, region):
+def _init_worker(tracks, region, base):
     global _TRACKS, REGION
     _TRACKS, REGION = tracks, region
+    jm.set_elevation_base(base)
 
 
-def make_region(rxz):
-    """Build one region file (up to 32 x 32 chunks). Runs in a worker process."""
-    rx, rz = rxz
-    cxa, cza = jm.X_MIN // 16, jm.Z_MIN // 16
-    cx_lo, cx_hi = max(rx * 32, cxa), min(rx * 32 + 32, cxa + jm.WIDTH // 16)
-    cz_lo, cz_hi = max(rz * 32, cza), min(rz * 32 + 32, cza + jm.HEIGHT // 16)
-    x0, z0 = cx_lo * 16, cz_lo * 16
-    ground, top_block, layered = columns(x0, z0, (cx_hi - cx_lo) * 16, (cz_hi - cz_lo) * 16, _TRACKS)
-    chunks = {}
-    for cz in range(cz_lo, cz_hi):
-        for cx in range(cx_lo, cx_hi):
-            x, z = cx * 16 - x0, cz * 16 - z0
-            chunks[(cx & 31, cz & 31)] = chunk_nbt(cx, cz, ground[z:z + 16, x:x + 16],
-                                                   top_block[z:z + 16, x:x + 16], layered[z:z + 16, x:x + 16])
-    write_region(os.path.join(REGION, f"r.{rx}.{rz}.mca"), chunks)
-    return len(chunks)
+def make_region(job):
+    """Build one region file from a list of chunk coordinates. Runs in a worker process."""
+    (rx, rz), chunk_list = job
+    cxs = [c[0] for c in chunk_list]; czs = [c[1] for c in chunk_list]
+    x0, z0 = min(cxs) * 16, min(czs) * 16
+    w = (max(cxs) - min(cxs) + 1) * 16
+    h = (max(czs) - min(czs) + 1) * 16
+    ground, top, under, boulder, layered = columns(x0, z0, w, h, _TRACKS)
+    out = {}
+    for cx, cz in chunk_list:
+        x, z = cx * 16 - x0, cz * 16 - z0
+        out[(cx & 31, cz & 31)] = chunk_nbt(
+            cx, cz, ground[z:z + 16, x:x + 16], top[z:z + 16, x:x + 16],
+            under[z:z + 16, x:x + 16], boulder[z:z + 16, x:x + 16], layered[z:z + 16, x:x + 16])
+    write_region(os.path.join(REGION, "r.%d.%d.mca" % (rx, rz)), out)
+    return len(out)
 
 
-def main():
-    global OUT, REGION
+def stored_base(root):
+    """The elevation anchor a save was built with, if it has one.
+
+    Every world pins one Mars elevation to y = Y_BASE. If a second route were
+    anchored differently, the two pieces of terrain would not line up, so the
+    first build wins and later ones reuse its number.
+    """
+    path = os.path.join(root, MARKER)
+    if os.path.exists(path):
+        try:
+            return json.load(open(path)).get("elevation_base_m")
+        except (ValueError, OSError):
+            return None
+    return None
+
+
+def build(chunks, root, region, write_pack=True, label="", base=None):
+    """Write the terrain for `chunks` into `region`. Returns the info dict."""
     from multiprocessing import Pool, cpu_count
     t0 = time.time()
-    # --save "<.minecraft>/saves/<world>": write the terrain into an existing singleplayer save
-    # (made with mcmcp's create_world, then CLOSED). Only its region files are replaced.
-    into_save = "--save" in sys.argv
-    if into_save:
-        OUT = sys.argv[sys.argv.index("--save") + 1]
-        if not os.path.exists(os.path.join(OUT, "level.dat")):
-            sys.exit(f"{OUT} is not a Minecraft save (no level.dat). Create the world first.")
-    elif os.path.exists(os.path.join(OUT, "level.dat")):
-        sys.exit(f"{OUT} already has a world (level.dat). Move it away first if you want a fresh one.")
-    REGION = region_dir(OUT)
-    os.makedirs(REGION, exist_ok=True)
-    print(f"  writing region files to {REGION}")
-    print(f"1/3 Jezero area: {jm.describe()['area']} = {jm.WIDTH} x {jm.HEIGHT} blocks (1 block = 1 m)")
-    tracks = rover_track_blocks()
-    print(f"  rover tracks: {len(tracks)} blocks")
+    lo, hi = corridor_relief(chunks)
+    if base is None:
+        base = lo - 24.0                       # 24 m of rock under the lowest ground
+    if hi - base > jm.USABLE_HEIGHT:
+        sys.exit("This route climbs %d m above the height this world is anchored at, and a\n"
+                 "Minecraft world only holds %d m. Make a new world for this route."
+                 % (round(hi - base), jm.USABLE_HEIGHT))
+    jm.set_elevation_base(base)
 
-    cxa, cza = jm.X_MIN // 16, jm.Z_MIN // 16
-    regions = sorted({(cx >> 5, cz >> 5) for cx in range(cxa, cxa + jm.WIDTH // 16)
-                      for cz in range(cza, cza + jm.HEIGHT // 16)})
-    workers = max(1, cpu_count() - 2)
-    print(f"2/3 writing {len(regions)} region files with {workers} workers (a few minutes) ...")
-    with Pool(workers, initializer=_init_worker, initargs=(tracks, REGION)) as pool:
-        for k, _ in enumerate(pool.imap_unordered(make_region, regions), 1):
-            if k % 20 == 0 or k == len(regions):
-                print(f"  {k}/{len(regions)} regions ({time.time() - t0:.0f} s)", flush=True)
+    os.makedirs(region, exist_ok=True)
+    print("1/3 %s: %d chunks = %.2f km2 of Mars (1 block = 1 m)"
+          % (label or "corridor", len(chunks), len(chunks) * 256 / 1e6))
+    tracks = rover_track_blocks(chunks)
+    print("  rover tracks in view: %d blocks" % len(tracks))
+
+    # Group the chunks by the region file they belong to (32 x 32 chunks each).
+    groups = {}
+    for cx, cz in chunks:
+        groups.setdefault((cx >> 5, cz >> 5), []).append((cx, cz))
+    jobs = sorted(groups.items())
+    workers = max(1, min(len(jobs), cpu_count() - 2))
+    print("2/3 writing %d region files with %d workers ..." % (len(jobs), workers))
+    with Pool(workers, initializer=_init_worker, initargs=(tracks, region, base)) as pool:
+        done = 0
+        for k, n in enumerate(pool.imap_unordered(make_region, jobs), 1):
+            done += n
+            if k % 10 == 0 or k == len(jobs):
+                print("  %d/%d region files, %d chunks (%.0f s)"
+                      % (k, len(jobs), done, time.time() - t0), flush=True)
 
     print("3/3 data pack + map info ...")
-    if not into_save:
-        write_datapack()        # 1.21.1 server only; with mcmcp the bridge sets gravity etc. by command
+    if write_pack:
+        write_datapack(root)
     info = jm.describe()
+    box = corridor_bounds(chunks)
+    info["corridor"] = {
+        "chunks": len(chunks), "blocks_box": box,
+        "area_km2": round(len(chunks) * 256 / 1e6, 3),
+        "corridor_radius_m": CORRIDOR_RADIUS_M, "station_radius_m": STATION_RADIUS_M,
+        "note": "only the ground near the planned walk exists; everywhere else is empty",
+    }
+    info["elevation_base_m"] = base
+    info["elevation_in_corridor_m"] = [round(lo, 1), round(hi, 1)]
     lat, lon = jm.landing_site()
     lx, lz = jm.block_of_latlon(lat, lon)
-    info["landing_site"] = {"lat": lat, "lon": lon, "x": lx, "z": lz,
-                            "y": jm.ground_y(jm.load_elevation(), lx, lz) + 1}
-    json.dump(info, open(os.path.join(OUT if into_save else jm.SERVER_DIR, "world_info.json"), "w"), indent=1)
-    print(f"done in {time.time() - t0:.0f} s -> {OUT}")
+    info["landing_site"] = {"lat": lat, "lon": lon, "x": lx, "z": lz, "y": jm.ground_y(lx, lz) + 1}
+    json.dump(info, open(os.path.join(root, "world_info.json"), "w"), indent=1)
+    json.dump({"elevation_base_m": base, "built": time.strftime("%Y-%m-%d %H:%M:%S"),
+               "corridor": info["corridor"]},
+              open(os.path.join(root, MARKER), "w"), indent=1)
+    print("done in %.0f s -> %s" % (time.time() - t0, root))
+    return info
+
+
+# ---------------------------------------------------------------- 8. handing the world to someone
+HOW_TO_USE = """MARSCUFF - JEZERO CRATER, FOR REAL
+==================================
+
+This is a Minecraft world made from NASA/USGS maps of Jezero Crater, the place
+Perseverance landed in February 2021. One Minecraft block is one metre of Mars,
+sideways AND up, so the hills are the real hills and the climbs are the real
+climbs. Block 0, 0 is the landing site.
+
+HOW TO SET IT UP
+1. Unzip this folder.
+2. Put the folder "%(save)s" inside your Minecraft saves folder:
+     Windows  %%APPDATA%%\\.minecraft\\saves
+     macOS    ~/Library/Application Support/minecraft/saves
+     Linux    ~/.minecraft/saves
+3. Start Minecraft Java Edition, open Singleplayer, and the world is in the list.
+4. The first time you open it, go to Options -> Data Packs (or Edit -> Data Packs
+   from the world list) and make sure "MarsCuff" is switched on. That is what
+   gives you the butterscotch sky, no rain, and Mars gravity (0.378 x Earth, so
+   you jump about two and a half times as high and fall gently).
+
+WHAT YOU ARE LOOKING AT
+  * the ground            USGS CTX digital terrain model, 40 m cells, smoothed
+  * the rock colours      bedrock units mapped by Stack et al. 2020
+  * the dark grey strip   Perseverance's real driving track
+  * the loose rocks       boulder fields, denser on the crater rim units
+  * the small craters     added by us: real Mars has them at this size, the
+                          40 m map cannot see them (labelled MODEL, not data)
+
+WHY THE WORLD JUST STOPS
+Only the ground near your planned walk was built: %(area)s km2 of it. Building
+all 900 km2 of the map would be about 14 GB. The empty edge is the edge of what
+was generated, not a cliff on Mars. Plan a different walk on the website and
+generate again to get a different strip.
+
+THE EVA
+Your route, timings and the Point of No Return are on the paper cuff and in the
+written book you start with. Work the stations in order, do the experiments on
+the cuff, and get home before the clock runs out.
+"""
+
+
+def export_zip(save, dest):
+    """Zip a finished save folder with a HOW-TO-USE.txt beside it."""
+    name = os.path.basename(os.path.normpath(save))
+    info = {}
+    path = os.path.join(save, "world_info.json")
+    if os.path.exists(path):
+        info = json.load(open(path))
+    area = (info.get("corridor") or {}).get("area_km2", "?")
+    readme = HOW_TO_USE % {"save": name, "area": area}
+    with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("HOW-TO-USE.txt", readme)
+        for folder, _dirs, files in os.walk(save):
+            for f in files:
+                full = os.path.join(folder, f)
+                z.write(full, os.path.join(name, os.path.relpath(full, save)))
+    print("zipped -> %s (%.0f MB)" % (dest, os.path.getsize(dest) / 1e6))
+
+
+# ---------------------------------------------------------------- main
+def main():
+    ap = argparse.ArgumentParser(description="Build the Jezero terrain along one planned walk.")
+    ap.add_argument("--route", help="plan JSON from the website (web/js/minecraft.js payload)")
+    ap.add_argument("--save", help="an existing, CLOSED Minecraft save to write the terrain into")
+    ap.add_argument("--zip", dest="zip_to", help="also zip the finished save to this file")
+    args = ap.parse_args()
+
+    root = args.save or OUT
+    if args.save:
+        if not os.path.exists(os.path.join(root, "level.dat")):
+            sys.exit("%s is not a Minecraft save (no level.dat). Create the world first." % root)
+    else:
+        os.makedirs(root, exist_ok=True)
+
+    if args.route:
+        plan = json.load(open(args.route))
+        points = route_points(plan)
+        label = "route corridor (%.0f m band, %.0f m at stations)" % (CORRIDOR_RADIUS_M,
+                                                                     STATION_RADIUS_M)
+    else:
+        points = demo_points()
+        label = "demo disc, %.1f km across the landing site" % (DEMO_RADIUS_M * 2 / 1000.0)
+
+    chunks = corridor_chunks(points)
+    if not chunks:
+        sys.exit("That route is not inside the NASA map, so there is no data to build from.")
+    build(chunks, root, region_dir(root), write_pack=True, label=label, base=stored_base(root))
+
+    if args.zip_to:
+        export_zip(root, args.zip_to)
 
 
 if __name__ == "__main__":

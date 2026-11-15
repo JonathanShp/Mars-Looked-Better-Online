@@ -6,8 +6,12 @@
 #
 # First time only, it makes the Jezero world:
 #   1. mcmcp creates an empty flat world "MarsCuff Jezero" and closes it again
-#   2. make_world.py writes the real Jezero ground into it (~2 min, ~1.5 GB)
+#   2. make_world.py writes real Jezero ground into it: a 3 km circle around the
+#      landing site to start with (about 15 s, about 110 MB)
 #   3. mcmcp opens it: you spawn at Perseverance's landing site
+# After that, every walk you send from the website rebuilds the ground along THAT
+# route (about 100 MB), so you never have to wait for the whole 900 km2 map.
+#
 # Every time: starts the website bridge at http://localhost:8770.
 
 import os
@@ -19,26 +23,20 @@ import webbrowser
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bridge
 import jezero_map as jm
+import make_world as mw
 
-MARKER = os.path.join(bridge.SAVE_DIR, "marscuff_terrain.json")    # "the Jezero ground is in this save"
+MARKER = os.path.join(bridge.SAVE_DIR, mw.MARKER)    # "the Jezero ground is in this save"
 
 
 def say(text):
     print("\n" + text)
 
 
-def wait_until_in_world(mcp, seconds=180):
-    """A big world can still be loading when the mod answers, so ask where the player is until it knows.
-    No world yet = error "Not in a world". Pause menu open = the world won't run our commands yet."""
-    for _ in range(seconds // 3):
-        time.sleep(3)
-        try:
-            ok, text = mcp.call("get_player_state", {}, timeout=30)
-            if ok and "game is paused" not in text:
-                return
-        except OSError:
-            pass                              # the mod is busy loading: try again
-    sys.exit("  The world didn't finish opening in Minecraft. Open 'MarsCuff Jezero' yourself, then run this again.")
+def wait_until_in_world(mcp, seconds=240):
+    """A big world can still be loading when the mod answers, so wait until the player is really in it."""
+    if not bridge.wait_until_in_world(mcp, seconds):
+        sys.exit("  The world didn't finish opening in Minecraft. "
+                 f"Open '{bridge.SAVE_NAME}' yourself, then run this again.")
 
 
 def main():
@@ -49,7 +47,7 @@ def main():
         sys.exit("Can't reach the mcmcp mod. Open Minecraft (with mcmcp) first, then run this again.")
 
     if not os.path.exists(MARKER):
-        say("First time: making the Jezero world (about 3 minutes) ...")
+        say("First time: making the Jezero world (about a minute) ...")
         mcp.call("leave_world", {}, timeout=120)          # the mod can only create/open a world from the title screen
         time.sleep(3)
         if not os.path.exists(os.path.join(bridge.SAVE_DIR, "level.dat")):
@@ -69,23 +67,28 @@ def main():
             # The mod never overwrites a folder: if one was in the way it adds a number to the name.
             sys.exit(f"  The new world isn't in '{bridge.SAVE_DIR}'. A folder with that name was probably "
                      "already there, so Minecraft picked another name. Rename or move that folder, then run this again.")
+        # No --route yet, so this builds the starter circle around the landing site.
+        # make_world.py writes the marker file itself (it holds the height the ground
+        # was lined up with), so we must NOT write over it here.
         subprocess.run([sys.executable, os.path.join(jm.HERE, "make_world.py"), "--save", bridge.SAVE_DIR], check=True)
-        open(MARKER, "w").write('{"terrain": "Jezero, 1 block = 1 m, made by make_world.py"}\n')
         print("  load_world:", mcp.call("load_world", {"name": bridge.SAVE_NAME}, timeout=600)[1])
         wait_until_in_world(mcp)
-        info = jm.describe()
+        bridge.use_save_elevation()           # use the same heights the ground was built with
         lat, lon = jm.landing_site()
         x, z = jm.block_of_latlon(lat, lon)
-        y = jm.ground_y(bridge.ELEV, x, z) + 1
+        y = bridge.ground(x, z) + 1
         for c in [f"setworldspawn {x} {y} {z}", f"tp @s {x + 0.5} {y} {z + 0.5}", f"spawnpoint @s {x} {y} {z}"]:
             print(" ", c, "->", mcp.cmd(c)[1])
         bridge.mars_rules(mcp)
-        print("  World ready:", info["area"])
+        built = bridge.world_info().get("corridor") or {}
+        print(f"  World ready: {built.get('area_km2', '?')} km2 of Jezero ground around the landing site "
+              f"(1 block = 1 m). Send a walk from the website to build the ground along it.")
     else:
         say(f"Jezero world already made. In Minecraft, open the '{bridge.SAVE_NAME}' world.")
 
     say("=" * 60 + f"\n  READY! Website: http://localhost:{bridge.PORT}\n"
-        "  Plan a walk inside the yellow square, press 'Send to Minecraft'.\n"
+        "  Plan a walk anywhere on the Jezero map, press 'Send to Minecraft'.\n"
+        "  It closes the world, builds the ground along your walk, and opens it again.\n"
         "  Close this window to stop the website bridge.\n" + "=" * 60)
     webbrowser.open(f"http://localhost:{bridge.PORT}")
     bridge.MCP = mcp

@@ -35,3 +35,37 @@ body.show-cuff #cuff-viewer { display: block; position: fixed; inset: 0; z-index
   #cuff { display: block; margin: 0; }
   .cuff-page { border-left: none; page-break-after: always; break-after: page; }
 }
+
+/* Station protocol lists (science.js). They show up in two places: the station
+   card in the map popup, and the printed cuff pages. Loaded after style.css,
+   so these rules sit on top of the plain .card styles there. */
+.protocols { padding-left: 20px; }
+.protocols > li { margin: 7px 0; padding-left: 2px; }
+.task-why { color: #555; font-style: italic; margin: 2px 0; }
+.task-where { margin: 2px 0; }
+.task-steps { margin: 3px 0 2px; padding-left: 18px; color: #333; }
+.task-steps li { margin: 1px 0; }
+/* A card with five protocols is taller than the screen, so the list scrolls
+   inside the popup instead of pushing the map around. */
+.card .protocols { max-height: 44vh; overflow-y: auto; }
+
+/* Cuff pages for the reworked checklist. cuff.css loads after style.css,
+   so these win over the general page rules. */
+.cuff-why { margin: 2px 0 4px; padding-left: 14px; font-size: 7.5pt; }
+.cuff-why li { margin: 1px 0; }
+.cuff-job { margin: 0 0 6px; border-bottom: 1px solid #bbb; padding-bottom: 4px; }
+.cuff-where { font-size: 7.5pt; margin: 1px 0; }
+.cuff-steps { margin: 2px 0; padding-left: 16px; font-size: 7.5pt; }
+.cuff-steps li { margin: 1px 0; }
+
+/* The "how to set it up in Minecraft" block in the plan panel (index.html).
+   Closed by default, small type, and it scrolls inside the panel when open so
+   it never pushes the buttons off a phone screen. It is hidden when printing. */
+#mc-setup { margin-top: 8px; font-size: 11px; line-height: 1.35; }
+#mc-setup > summary { cursor: pointer; font-weight: bold; }
+#mc-setup[open] { max-height: 42vh; overflow-y: auto; }
+#mc-setup p { margin: 6px 0; }
+#mc-setup ol { margin: 6px 0; padding-left: 18px; }
+#mc-setup li { margin: 3px 0; }
+#mc-setup code { font-size: 10px; word-break: break-word; }
+@media print { #mc-setup { display: none; } }

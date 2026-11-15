@@ -3,22 +3,32 @@
 # It runs on the computer that has Minecraft (with the mcmcp mod) and only
 # listens on this computer (127.0.0.1):
 #   1. serves the website at http://localhost:8770 (with a "Send to Minecraft" button)
-#   2. when that button is pressed, it builds the planned walk in your open world:
-#        * a habitat with a white beacon (home), where you respawn
-#        * purple beacons + signs at each station, a red beacon at the Point of No Return
-#        * big glowing arrows 25 m up, every 40 m along the route (red past the PNR)
-#        * the cuff as a written book in your hand + a chat link to the full cuff
+#   2. when that button is pressed it does two things, in this order:
+#        a. GROUND: closes the world, runs make_world.py for THIS route, and opens
+#           the world again. Only the ground within ~500 m of the planned walk is
+#           built (800 m around the habitat and the stations), so a walk costs about
+#           100 MB instead of the 14 GB the whole 900 km2 map would need.
+#           Minecraft locks the region files while a world is open, which is why
+#           the world has to be closed for this step.
+#        b. MARKERS: builds the walk itself in that fresh ground:
+#             * a habitat with a white beacon (home), where you respawn
+#             * purple beacons + signs at each station, a red beacon at the Point of No Return
+#             * big glowing arrows 25 m up, every 40 m along the route (red past the PNR)
+#             * the cuff as a written book in your hand + a chat link to the full cuff
 #
 # How it talks to Minecraft: mcmcp is an MCP server inside the game at
-# http://127.0.0.1:25599/mcp. We call two of its tools:
+# http://127.0.0.1:25599/mcp. We call four of its tools:
 #   build_structure  - places thousands of blocks in one call (boxes and lines)
 #   run_command      - one game command (max 256 characters)
+#   leave_world      - back to the title screen (so the region files are free)
+#   load_world       - open a save by name
 # The access token is read from mcmcp's own config file on this PC and never
 # leaves it.
 
 import json
 import math
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -27,6 +37,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import jezero_map as jm
+import make_world as mw
 
 PORT = 8770
 MC_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), ".minecraft")
@@ -34,7 +45,8 @@ SAVE_NAME = "MarsCuff Jezero"
 SAVE_DIR = os.environ.get("MARSCUFF_SAVE_DIR") or os.path.join(MC_DIR, "saves", SAVE_NAME)
 STATE = os.path.join(SAVE_DIR, "marscuff_route.json")         # what we built last time
 LAST_PLAN = os.path.join(SAVE_DIR, "marscuff_last_plan.json")
-ELEV = jm.load_elevation()
+PLAN_FILE = os.path.join(SAVE_DIR, "marscuff_plan_in.json")   # the plan we hand to make_world.py
+INFO_FILE = os.path.join(SAVE_DIR, "world_info.json")         # what make_world.py built last
 
 ARROW_SPACING = 40        # blocks between arrows (= 40 m, since 1 block = 1 m)
 ARROW_HEIGHT = 25         # blocks above the highest nearby ground (= 25 m)
@@ -132,8 +144,34 @@ class Build:
         self.labels.append((x, y, z, title, lines, colour))
 
 
+# ------------------------------------------------------------------ how high is the ground?
+# The markers (habitat, beacons, arrows) have to sit on the ground that make_world.py
+# actually built, which is the NASA elevation PLUS the small craters, sand ripples and
+# boulders that surface.py adds. So we ask make_world.py for the very same block heights
+# it wrote, instead of guessing from the elevation grid. mw.columns() works on whole
+# patches, so we fetch a 24x24 patch at a time and remember it.
+_GROUND = {}            # (x, z) -> block y of the ground surface
+
+
+def use_save_elevation(root=SAVE_DIR):
+    """Line our heights up with the save: every world pins one Mars elevation to y = Y_BASE."""
+    base = mw.stored_base(root)
+    if base is not None:
+        jm.set_elevation_base(base)
+    _GROUND.clear()
+    return base
+
+
 def ground(x, z):
-    return jm.ground_y(ELEV, x, z)
+    """Block y of the ground at this block, the same number make_world.py wrote."""
+    x, z = int(round(x)), int(round(z))
+    if (x, z) not in _GROUND:
+        x0, z0 = x - 8, z - 8
+        g = mw.columns(x0, z0, 24, 24)[0]
+        for dz in range(24):
+            for dx in range(24):
+                _GROUND[(x0 + dx, z0 + dz)] = int(g[dz, dx])
+    return _GROUND[(x, z)]
 
 
 def max_ground(x, z, r):
@@ -197,11 +235,14 @@ class OutsideArea(Exception):
 
 def build_route(plan):
     spots = [("The habitat", plan["habitat"])] + [(f"Station {k + 1}", s) for k, s in enumerate(plan["stations"])]
-    outside = [name for name, c in spots if not jm.inside(*jm.block_of_cell(c["row"], c["col"]), margin=8)]
+    # The whole NASA map is available now, so the only way to be "outside" is to be off
+    # the map itself (the ground data simply stops there).
+    outside = [name for name, c in spots if not jm.on_map(*jm.block_of_cell(c["row"], c["col"]), margin_m=8)]
     if outside:
         one = len(outside) == 1
-        raise OutsideArea(f"{', '.join(outside)} {'is' if one else 'are'} outside the Minecraft area "
-                          f"(the dashed square on the map). Move {'it' if one else 'them'} inside and send again.")
+        raise OutsideArea(f"{', '.join(outside)} {'is' if one else 'are'} off the edge of the Jezero map "
+                          f"(there is no NASA terrain data past it). Move {'it' if one else 'them'} back "
+                          f"onto the map and send again.")
     b = Build()
     hx, hz = jm.block_of_cell(plan["habitat"]["row"], plan["habitat"]["col"])
     hbase = build_habitat(b, hx, hz)
@@ -218,7 +259,7 @@ def build_route(plan):
         avoid.append((sx, sz))
 
     pnr = plan.get("pnr")
-    if pnr and jm.inside(*jm.block_of_cell(pnr["row"], pnr["col"]), margin=8):
+    if pnr and jm.on_map(*jm.block_of_cell(pnr["row"], pnr["col"]), margin_m=8):
         px_, pz_ = jm.block_of_cell(pnr["row"], pnr["col"])
         build_beacon(b, px_, pz_, "red_stained_glass", "POINT OF NO RETURN",
                      [f"EVA {pnr['label']}: past here you", "can't get home with the reserve"], "red")
@@ -248,7 +289,7 @@ def build_route(plan):
         bx, bz, _ = point_at(max(0, d - 6))
         ang = round(math.atan2(az - bz, ax - bx) / (math.pi / 4)) * (math.pi / 4)   # 8 directions
         dx, dz = round(math.cos(ang)), round(math.sin(ang))
-        if jm.inside(round(x), round(z), margin=6) and all(math.hypot(x - ox, z - oz) > 7 for ox, oz in avoid):
+        if jm.on_map(round(x), round(z), margin_m=6) and all(math.hypot(x - ox, z - oz) > 7 for ox, oz in avoid):
             y = max_ground(round(x), round(z), 6) + ARROW_HEIGHT
             for a, c in arrow_lines(x, y, z, dx, dz):
                 b.line(a, c, "redstone_block" if late else "sea_lantern")
@@ -311,6 +352,29 @@ def give_cuff_book(mcp, pages, errors):
     return n
 
 
+def world_info():
+    """What make_world.py built last time (corridor size, elevation anchor, ...)."""
+    try:
+        return json.load(open(INFO_FILE, encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def corridor_border():
+    """worldborder commands that fence you into the ground that actually exists.
+
+    make_world.py writes the corridor's block box into world_info.json. The border
+    is the box, so walking out of the built ground is impossible instead of a
+    surprise cliff into the void. If we have no box, leave the border alone.
+    """
+    box = (world_info().get("corridor") or {}).get("blocks_box")
+    if not box:
+        return []
+    x0, z0, x1, z1 = box
+    return [f"worldborder center {(x0 + x1) // 2} {(z0 + z1) // 2}",
+            f"worldborder set {max(64, min(x1 - x0, z1 - z0))}"]
+
+
 def mars_rules(mcp):
     """Always day, clear sky, no mobs, Mars gravity. (Names checked live in Minecraft 26.3.)"""
     # Mars g = 3.71 m/s^2 = 0.378 x Earth (NASA Mars Fact Sheet). Minecraft's gravity 0.08 x 0.378 = 0.0302.
@@ -318,16 +382,88 @@ def mars_rules(mcp):
               "gamerule spawn_mobs false", "gamerule respawn_radius 0",
               "attribute @s minecraft:gravity base set 0.0302",
               "attribute @s minecraft:safe_fall_distance base set 7.9",
-              "time set noon", "weather clear", "difficulty peaceful",
-              f"worldborder center {jm.X_MIN + jm.WIDTH // 2} {jm.Z_MIN + jm.HEIGHT // 2}",
-              f"worldborder set {min(jm.WIDTH, jm.HEIGHT)}"]:
+              "time set noon", "weather clear", "difficulty peaceful"] + corridor_border():
         mcp.cmd(c)
 
 
+# ------------------------------------------------------------------ phase a: the ground
+def wait_until_in_world(mcp, seconds=240):
+    """Wait for the world to finish opening (the title screen counts as 'paused')."""
+    for _ in range(max(1, seconds // 3)):
+        time.sleep(3)
+        try:
+            ok, text = mcp.call("get_player_state", {}, timeout=30)
+        except OSError:
+            continue                       # the game is busy loading; ask again
+        if ok and "game is paused" not in text:
+            return True
+    return False
+
+
+def route_signature(plan):
+    """The part of a plan that decides which ground has to exist."""
+    return {"habitat": [plan["habitat"]["row"], plan["habitat"]["col"]],
+            "stations": [[s["row"], s["col"]] for s in plan["stations"]],
+            "pnr": [plan["pnr"]["row"], plan["pnr"]["col"]] if plan.get("pnr") else None,
+            "path": [[row, col] for row, col, _ in plan["path"]]}
+
+
+def ground_is_current(plan):
+    """True if the ground in the save was already built for exactly this walk."""
+    if not os.path.exists(os.path.join(SAVE_DIR, mw.MARKER)):
+        return False
+    try:
+        return json.load(open(PLAN_FILE, encoding="utf-8")).get("_signature") == route_signature(plan)
+    except (OSError, ValueError):
+        return False
+
+
+def generate_ground(mcp, plan):
+    """Build the Mars ground around THIS walk, and nothing else.
+
+    Minecraft keeps the region files open while a world is loaded, so the only way
+    to write new ground is: leave the world -> write it -> load the world again.
+    Takes about 20-30 s for a normal walk (about 100 MB of chunks).
+    """
+    if ground_is_current(plan):
+        print("  ground: already built for this walk, keeping it")
+        return False
+
+    print("  ground: closing the world so the chunk files are free ...")
+    mcp.call("leave_world", {}, timeout=120)
+    time.sleep(5)                          # let Minecraft finish saving and let go
+
+    os.makedirs(SAVE_DIR, exist_ok=True)
+    payload = dict(plan)
+    payload["_signature"] = route_signature(plan)
+    json.dump(payload, open(PLAN_FILE, "w", encoding="utf-8"))
+
+    print("  ground: writing the terrain around the route ...")
+    subprocess.run([sys.executable, os.path.join(jm.HERE, "make_world.py"),
+                    "--route", PLAN_FILE, "--save", SAVE_DIR], check=True)
+
+    print("  ground: opening the world again ...")
+    ok, out = mcp.call("load_world", {"name": SAVE_NAME}, timeout=600)
+    if not ok:
+        raise RuntimeError(f"could not re-open the world: {out}")
+    if not wait_until_in_world(mcp):
+        raise RuntimeError(f"the world did not finish opening - open '{SAVE_NAME}' yourself and send again")
+
+    # The new chunk files replaced the old ones, so last route's markers are gone too.
+    use_save_elevation()
+    if os.path.exists(STATE):
+        os.remove(STATE)
+    info = world_info().get("corridor") or {}
+    print("  ground: %s chunks, %s km2" % (info.get("chunks", "?"), info.get("area_km2", "?")))
+    return True
+
+
+# ------------------------------------------------------------------ phase b: the markers
 def send_route(mcp, plan):
     errors = []
     os.makedirs(SAVE_DIR, exist_ok=True)
-    old = json.load(open(STATE)) if os.path.exists(STATE) else {}
+    rebuilt = generate_ground(mcp, plan)
+    old = {} if rebuilt else (json.load(open(STATE)) if os.path.exists(STATE) else {})
     b, spawn, arrows = build_route(plan)
 
     # 1. Blocks: first turn last route's blocks back into air, then build the new ones. One call.
@@ -397,7 +533,14 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/api/area":
-            return self.reply(200, {"bounds_deg": jm.area_bounds_deg(), "scale": jm.describe()["scale"]})
+            # The whole map can be played now, so the website no longer draws a box.
+            # It just needs the scale, the corridor widths, and what was built last time.
+            d = jm.describe()
+            return self.reply(200, {"bounds_deg": d["bounds_deg"], "scale": d["scale"],
+                                    "whole_map": True,
+                                    "corridor_radius_m": mw.CORRIDOR_RADIUS_M,
+                                    "station_radius_m": mw.STATION_RADIUS_M,
+                                    "built": world_info().get("corridor") or {}})
         if self.path == "/api/last-plan":
             return self.reply(200, json.load(open(LAST_PLAN)) if os.path.exists(LAST_PLAN) else {})
         return super().do_GET()
