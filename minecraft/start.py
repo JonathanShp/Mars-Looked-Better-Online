@@ -27,6 +27,18 @@ def say(text):
     print("\n" + text)
 
 
+def wait_until_in_world(mcp, seconds=180):
+    """A big world can still be loading when the mod answers, so try a harmless command until it works."""
+    for _ in range(seconds // 3):
+        time.sleep(3)
+        try:
+            if mcp.cmd("time query gametime")[0]:
+                return
+        except OSError:
+            pass                              # the mod is busy loading: try again
+    sys.exit("  The world didn't finish opening in Minecraft. Open 'MarsCuff Jezero' yourself, then run this again.")
+
+
 def main():
     mcp = bridge.Mcp()
     try:
@@ -36,6 +48,8 @@ def main():
 
     if not os.path.exists(MARKER):
         say("First time: making the Jezero world (about 3 minutes) ...")
+        mcp.call("leave_world", {}, timeout=120)          # the mod can only create/open a world from the title screen
+        time.sleep(3)
         if not os.path.exists(os.path.join(bridge.SAVE_DIR, "level.dat")):
             ok, out = mcp.call("create_world", {"name": bridge.SAVE_NAME, "gamemode": "creative",
                                                 "difficulty": "peaceful", "type": "flat", "structures": False,
@@ -43,18 +57,20 @@ def main():
             print("  create_world:", out)
             if not ok:
                 sys.exit("  Could not create the world (see above).")
-            time.sleep(5)
-            mcp.cmd("tp @s 0 200 0")          # so you don't wake up inside the new ground
         else:
-            mcp.call("load_world", {"name": bridge.SAVE_NAME}, timeout=300)
-            time.sleep(5)
-            mcp.cmd("tp @s 0 200 0")
+            print("  load_world:", mcp.call("load_world", {"name": bridge.SAVE_NAME}, timeout=300)[1])
+        wait_until_in_world(mcp)
+        mcp.cmd("tp @s 0 200 0")              # so you don't wake up inside the new ground
         print("  leave_world:", mcp.call("leave_world", {}, timeout=120)[1])
         time.sleep(5)                         # let Minecraft finish saving and let go of the files
+        if not os.path.exists(os.path.join(bridge.SAVE_DIR, "level.dat")):
+            # The mod never overwrites a folder: if one was in the way it adds a number to the name.
+            sys.exit(f"  The new world isn't in '{bridge.SAVE_DIR}'. A folder with that name was probably "
+                     "already there, so Minecraft picked another name. Rename or move that folder, then run this again.")
         subprocess.run([sys.executable, os.path.join(jm.HERE, "make_world.py"), "--save", bridge.SAVE_DIR], check=True)
         open(MARKER, "w").write('{"terrain": "Jezero, 1 block = 1 m, made by make_world.py"}\n')
         print("  load_world:", mcp.call("load_world", {"name": bridge.SAVE_NAME}, timeout=600)[1])
-        time.sleep(10)
+        wait_until_in_world(mcp)
         info = jm.describe()
         lat, lon = jm.landing_site()
         x, z = jm.block_of_latlon(lat, lon)
