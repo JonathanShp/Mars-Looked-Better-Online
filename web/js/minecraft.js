@@ -13,6 +13,14 @@ const MC = {
     const btn = document.getElementById("btn-minecraft");
     btn.hidden = false;
     btn.onclick = () => this.send();
+    // Outline the part of Jezero that exists in Minecraft (10 km x 10 km at 1 block = 1 m).
+    fetch("/api/area").then((r) => r.json()).then((a) => {
+      const b = a.bounds_deg;
+      L.rectangle([[b.south, b.west], [b.north, b.east]],
+        { color: "#ffd54a", weight: 2, dashArray: "8 6", fill: false, interactive: false }).addTo(PlanUI.map);
+      L.marker([b.north, b.west], { interactive: false, icon: L.divIcon({ className: "place-label",
+        html: "⛏ Minecraft area (10 km, 1 block = 1 m)", iconSize: null, iconAnchor: [0, -4] }) }).addTo(PlanUI.map);
+    });
     if (location.hash === "#cuff") this.openLastCuff();     // the chat link inside Minecraft
   },
 
@@ -62,7 +70,7 @@ const MC = {
       `Sta ${k + 1}: ${hm(Plan.homeField[Grid.index(st.row, st.col)])} walk home`).join("\n") +
       "\nSuit alarm: walk straight home." + (res.pnr ? `\nNever pass the PNR after ${hm(res.pnr.clock)}.` : ""));
     s.push("SOURCES\nGround: USGS CTX DTM (MRO). Rocks: Stack et al. 2020. Tracks: NASA/JPL Mars 2020. " +
-           "Times: MODEL (Tobler x 0.6, team assumptions). 1 block = 10 m.");
+           "Times: MODEL (Tobler x 0.6, team assumptions). 1 block = 1 m.");
     return s;
   },
 

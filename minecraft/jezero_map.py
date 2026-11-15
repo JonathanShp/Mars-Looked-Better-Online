@@ -4,11 +4,14 @@
 # arrows on it), so they always agree on where everything is.
 #
 # The rule is simple and TRUE TO SCALE:
-#   1 Minecraft block = 10 m of Mars, sideways AND up.
-#   +X = east, +Z = south (that is how Minecraft's compass works), row 0 = north.
+#   1 Minecraft block = 1 m of Mars, sideways AND up (the Minecraft player is
+#   1.8 blocks tall = a 1.8 m astronaut).
+#   +X = east, +Z = south (that is how Minecraft's compass works).
+# At 1 m per block the whole 30 km elevation grid would be a 60 GB world, so we
+# build a 10 km x 10 km square centred on Perseverance's landing site. That
+# square is the "Minecraft area" the website outlines on its map.
 # Ground height comes from the same USGS CTX elevation grid the website uses
-# (web/data/grid.bin, 40 m cells), smoothed between cells (bilinear) so the
-# ground has no 4-block steps.
+# (web/data/grid.bin, 40 m cells), smoothed between cells (bilinear).
 
 import json
 import math
@@ -21,9 +24,9 @@ WEB = os.path.join(HERE, "..", "web")
 # The Minecraft server lives OUTSIDE OneDrive (OneDrive locks world files while syncing).
 SERVER_DIR = os.path.join(os.path.expanduser("~"), "MarsCuffMinecraft", "server")
 
-M_PER_BLOCK = 10.0          # 1 block = 10 m (both sideways and up)
-ELEV_BASE_M = -2720.0       # this elevation sits at Y_BASE ...
-Y_BASE = -50                # ... so the crater floor is near y -49 and the rim near y 70
+M_PER_BLOCK = 1.0           # 1 block = 1 m, sideways and up
+AREA_M = 10000              # the Minecraft area is 10 km x 10 km
+Y_BASE = -44                # the lowest ground in the area sits at this y
 
 META = json.load(open(os.path.join(DATA, "grid.json")))
 ROWS, COLS = META["rows"], META["cols"]
@@ -33,11 +36,9 @@ LAT_MID = (B["north"] + B["south"]) / 2
 DX_CELL = META["cell_size_m_projected"] * math.cos(math.radians(LAT_MID))
 DZ_CELL = META["cell_size_m_projected"]
 
-# World size in blocks, rounded down to whole 16-block chunks.
-WIDTH = int(COLS * DX_CELL / M_PER_BLOCK) // 16 * 16
-HEIGHT = int(ROWS * DZ_CELL / M_PER_BLOCK) // 16 * 16
-X_MIN = -(WIDTH // 32) * 16       # chunk-aligned, map roughly centred on 0,0
-Z_MIN = -(HEIGHT // 32) * 16
+# World size in blocks (whole 16-block chunks), centred near x = 0, z = 0.
+WIDTH = HEIGHT = int(AREA_M / M_PER_BLOCK) // 16 * 16
+X_MIN = Z_MIN = -(WIDTH // 32) * 16
 
 
 def load_elevation():
@@ -48,11 +49,46 @@ def load_elevation():
     return a
 
 
+def landing_site():
+    """Perseverance landing site = first point of the earliest traverse segment (MMGIS data)."""
+    t = json.load(open(os.path.join(DATA, "traverse.geojson")))
+    first = min(t["features"], key=lambda f: f["properties"].get("sol", 1e9))
+    coords = first["geometry"]["coordinates"]
+    if first["geometry"]["type"] == "MultiLineString":
+        coords = coords[0]
+    lon, lat = coords[0][:2]
+    return lat, lon
+
+
+def metres_of_latlon(lat, lon):
+    """Lat/lon -> metres east of the grid's west edge, metres south of its north edge."""
+    col_f = (lon - B["west"]) / (B["east"] - B["west"]) * COLS
+    row_f = (B["north"] - lat) / (B["north"] - B["south"]) * ROWS
+    return col_f * DX_CELL, row_f * DZ_CELL
+
+
+# Where the Minecraft area starts, in metres from the grid's west / north edges:
+# the landing site lands at about block 0, 0 (kept inside the elevation grid).
+_ls_e, _ls_s = metres_of_latlon(*landing_site())
+E0 = min(max(_ls_e + X_MIN * M_PER_BLOCK, 0.0), COLS * DX_CELL - WIDTH * M_PER_BLOCK)
+S0 = min(max(_ls_s + Z_MIN * M_PER_BLOCK, 0.0), ROWS * DZ_CELL - HEIGHT * M_PER_BLOCK)
+
+
 def cell_coords(x, z):
     """Block x,z -> fractional grid position (col_f, row_f). Cell c covers [c, c+1)."""
-    col_f = (x - X_MIN + 0.5) * M_PER_BLOCK / DX_CELL
-    row_f = (z - Z_MIN + 0.5) * M_PER_BLOCK / DZ_CELL
+    col_f = (E0 + (x - X_MIN + 0.5) * M_PER_BLOCK) / DX_CELL
+    row_f = (S0 + (z - Z_MIN + 0.5) * M_PER_BLOCK) / DZ_CELL
     return col_f, row_f
+
+
+def _area_min_elevation():
+    elev = load_elevation()
+    c0, c1 = int(E0 / DX_CELL), min(COLS, int((E0 + WIDTH * M_PER_BLOCK) / DX_CELL) + 2)
+    r0, r1 = int(S0 / DZ_CELL), min(ROWS, int((S0 + HEIGHT * M_PER_BLOCK) / DZ_CELL) + 2)
+    return min(elev[r * COLS + c] for r in range(r0, r1) for c in range(c0, c1))
+
+
+ELEV_BASE_M = float(_area_min_elevation())     # this elevation sits at Y_BASE
 
 
 def y_of_elevation(elev_m):
@@ -76,43 +112,39 @@ def ground_y(elev, x, z):
     return y_of_elevation(top * (1 - tv) + bot * tv)
 
 
+def block_of_metres(e, s):
+    return (X_MIN + math.floor((e - E0) / M_PER_BLOCK), Z_MIN + math.floor((s - S0) / M_PER_BLOCK))
+
+
 def block_of_cell(row, col):
     """Website grid cell (row, col) -> block x,z at the cell's centre."""
-    x = X_MIN + math.floor((col + 0.5) * DX_CELL / M_PER_BLOCK)
-    z = Z_MIN + math.floor((row + 0.5) * DZ_CELL / M_PER_BLOCK)
-    return x, z
+    return block_of_metres((col + 0.5) * DX_CELL, (row + 0.5) * DZ_CELL)
 
 
 def block_of_latlon(lat, lon):
     """Latitude/longitude (degrees) -> block x,z."""
-    col_f = (lon - B["west"]) / (B["east"] - B["west"]) * COLS
-    row_f = (B["north"] - lat) / (B["north"] - B["south"]) * ROWS
-    return (X_MIN + math.floor(col_f * DX_CELL / M_PER_BLOCK),
-            Z_MIN + math.floor(row_f * DZ_CELL / M_PER_BLOCK))
+    return block_of_metres(*metres_of_latlon(lat, lon))
 
 
-def landing_site():
-    """Perseverance landing site = first point of the earliest traverse segment (MMGIS data)."""
-    t = json.load(open(os.path.join(DATA, "traverse.geojson")))
-    def sol(f):
-        p = f.get("properties", {})
-        for k in ("sol", "Sol", "SOL", "startSol", "fromSol"):
-            if k in p and p[k] is not None:
-                return float(p[k])
-        return 1e9
-    first = min(t["features"], key=sol)
-    coords = first["geometry"]["coordinates"]
-    if first["geometry"]["type"] == "MultiLineString":
-        coords = coords[0]
-    lon, lat = coords[0][:2]
-    return lat, lon
+def inside(x, z, margin=0):
+    """Is block x,z inside the Minecraft area?"""
+    return (X_MIN + margin <= x < X_MIN + WIDTH - margin) and (Z_MIN + margin <= z < Z_MIN + HEIGHT - margin)
+
+
+def area_bounds_deg():
+    """The Minecraft area as latitude/longitude, for the website's outline."""
+    lon = lambda e: B["west"] + e / DX_CELL / COLS * (B["east"] - B["west"])
+    lat = lambda s: B["north"] - s / DZ_CELL / ROWS * (B["north"] - B["south"])
+    return {"west": lon(E0), "east": lon(E0 + WIDTH * M_PER_BLOCK),
+            "north": lat(S0), "south": lat(S0 + HEIGHT * M_PER_BLOCK)}
 
 
 def describe():
     return {
-        "scale": "1 block = 10 m of Mars, sideways and up (true scale, no exaggeration)",
+        "scale": "1 block = 1 m of Mars, sideways and up (true scale, no exaggeration)",
+        "area": f"{WIDTH * M_PER_BLOCK / 1000:.0f} km x {HEIGHT * M_PER_BLOCK / 1000:.0f} km around Perseverance's landing site",
         "x_min": X_MIN, "z_min": Z_MIN, "width": WIDTH, "height": HEIGHT,
-        "y_base": Y_BASE, "elev_base_m": ELEV_BASE_M,
+        "y_base": Y_BASE, "elev_base_m": ELEV_BASE_M, "bounds_deg": area_bounds_deg(),
         "axes": "+X = east, +Z = south",
         "source": META["source"]["name"],
     }

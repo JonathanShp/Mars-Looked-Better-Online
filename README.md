@@ -19,7 +19,7 @@ Works on phones too (panels fold; tap the map for the readout).
 
 ## Walk it in Minecraft (extra)
 
-`minecraft/` builds a true-scale Minecraft world of Jezero (1 block = 10 m) from the same NASA grids.
+`minecraft/` builds a true-scale Minecraft world (1 block = 1 m) of the 10 km around Perseverance's landing site, from the same NASA grids.
 The website's **⛏ Send to Minecraft** button then builds your route there: glowing arrows, station beacons and the cuff as a book.
 See [minecraft/README.md](minecraft/README.md).
 

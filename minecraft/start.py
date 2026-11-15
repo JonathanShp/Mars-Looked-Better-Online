@@ -36,7 +36,7 @@ enable-rcon=true
 rcon.port=25575
 rcon.password={password}
 broadcast-rcon-to-ops=false
-motd=MarsCuff - Jezero Crater, Mars (1 block = 10 m)
+motd=MarsCuff - Jezero Crater, Mars (1 block = 1 m)
 level-name=world
 level-type=minecraft\\:flat
 generator-settings={{"layers":[{{"block":"minecraft:bedrock","height":1}},{{"block":"minecraft:smooth_basalt","height":60}},{{"block":"minecraft:red_sandstone","height":3}},{{"block":"minecraft:red_sand","height":1}}],"biome":"minecraft:desert","structure_overrides":[]}}

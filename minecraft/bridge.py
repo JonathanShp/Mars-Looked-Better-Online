@@ -6,7 +6,7 @@
 #      Minecraft through RCON (the server's remote-command line):
 #        * a white beacon + habitat at the base, where you respawn
 #        * purple beacons at each station, a red beacon at the Point of No Return
-#        * big glowing arrows 20 blocks (200 m) up, every 160 m along the route
+#        * big glowing arrows 25 blocks (25 m) up, every 40 m along the route
 #        * the cuff as a written book in your hotbar + a chat link to the full cuff
 #
 # Usage: python minecraft/bridge.py      (start.py runs it for you)
@@ -30,8 +30,8 @@ STATE = os.path.join(jm.SERVER_DIR, "marscuff_state.json")     # what we built l
 FUNC_DIR = os.path.join(jm.SERVER_DIR, "world", "datapacks", "marscuff", "data", "marscuff", "function")
 ELEV = jm.load_elevation()
 
-ARROW_SPACING = 16        # blocks between arrows (= 160 m)
-ARROW_HEIGHT = 20         # blocks above the highest nearby ground (= 200 m)
+ARROW_SPACING = 40        # blocks between arrows (= 40 m, since 1 block = 1 m)
+ARROW_HEIGHT = 25         # blocks above the highest nearby ground (= 25 m)
 OUR_BLOCKS = ["iron_block", "beacon", "purple_stained_glass", "red_stained_glass", "sea_lantern",
               "redstone_block", "smooth_stone", "white_concrete", "light_blue_stained_glass", "glowstone"]
 # None of OUR_BLOCKS is used by the terrain, so "clear" can never eat real ground.
@@ -206,7 +206,17 @@ def arrow_blocks(cx, y, cz, dx, dz):
     return [(x, y, z) for x, z in pts]
 
 
+class OutsideArea(Exception):
+    pass
+
+
 def build_route(plan):
+    # Everything we build must be inside the 10 km Minecraft area.
+    spots = [("The habitat", plan["habitat"])] + [(f"Station {k + 1}", s) for k, s in enumerate(plan["stations"])]
+    outside = [name for name, c in spots if not jm.inside(*jm.block_of_cell(c["row"], c["col"]), margin=8)]
+    if outside:
+        raise OutsideArea(f"{', '.join(outside)} {'is' if len(outside) == 1 else 'are'} outside the Minecraft area "
+                          f"(the dashed square on the map). Move {'it' if len(outside) == 1 else 'them'} inside and send again.")
     b = Build()
     hx, hz = jm.block_of_cell(plan["habitat"]["row"], plan["habitat"]["col"])
     hbase = build_habitat(b, hx, hz)
@@ -224,7 +234,7 @@ def build_route(plan):
         avoid.append((sx, sz))
 
     pnr = plan.get("pnr")
-    if pnr:
+    if pnr and jm.inside(*jm.block_of_cell(pnr["row"], pnr["col"]), margin=8):
         px_, pz_ = jm.block_of_cell(pnr["row"], pnr["col"])
         build_beacon(b, px_, pz_, "red_stained_glass",
                      ["POINT OF NO RETURN", f"EVA {pnr['label']}: past here you can't",
@@ -258,7 +268,7 @@ def build_route(plan):
         ang = math.atan2(az - bz, ax - bx)
         ang = round(ang / (math.pi / 4)) * (math.pi / 4)          # snap to 8 compass directions
         dx, dz = round(math.cos(ang)), round(math.sin(ang))
-        if all(math.hypot(x - ox, z - oz) > 7 for ox, oz in avoid):  # keep beacon beams clear
+        if jm.inside(round(x), round(z), margin=6) and all(math.hypot(x - ox, z - oz) > 7 for ox, oz in avoid):
             y = max_ground(round(x), round(z), 6) + ARROW_HEIGHT
             for (bx_, by_, bz_) in arrow_blocks(x, y, z, dx, dz):
                 b.setblock(bx_, by_, bz_, "redstone_block" if late else "sea_lantern")
@@ -415,6 +425,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.reply(200, {"ok": True, "players": players})
             except Exception as e:
                 return self.reply(200, {"ok": False, "error": f"Minecraft server not reachable: {e}"})
+        if self.path == "/api/area":
+            return self.reply(200, {"bounds_deg": jm.area_bounds_deg(), "scale": jm.describe()["scale"]})
         if self.path == "/api/last-plan":
             p = os.path.join(jm.SERVER_DIR, "marscuff_last_plan.json")
             return self.reply(200, json.load(open(p)) if os.path.exists(p) else {})
@@ -430,6 +442,8 @@ class Handler(SimpleHTTPRequestHandler):
             msg, log = send_route(RCON, plan)
             print(msg, *log, sep="\n  ")
             return self.reply(200, {"ok": True, "message": msg})
+        except OutsideArea as e:
+            return self.reply(200, {"ok": False, "message": str(e)})
         except Exception as e:
             print("ERROR:", e)
             return self.reply(500, {"ok": False, "message": f"Could not build it in Minecraft: {e}"})
