@@ -81,7 +81,7 @@ class Mcp:
             return False, f"command too long ({len(command)} > 256): {command[:60]}..."
         ok, text = self.call("run_command", {"command": command})
         bad = any(w in text for w in ("Unknown", "Incorrect", "Expected", "Invalid", "Can't", "No entity", "not loaded",
-                                       "Failed to parse", "No key"))
+                                       "Failed to parse", "No key", "<--[HERE]"))
         return ok and not bad, text
 
 
@@ -312,19 +312,13 @@ def give_cuff_book(mcp, pages, errors):
 
 
 def mars_rules(mcp):
-    """Always day, clear sky, no mobs, Mars gravity. Gamerule names changed across versions, so try both."""
-    for new, old, value in [("advance_time", "doDaylightCycle", "false"), ("advance_weather", "doWeatherCycle", "false"),
-                            ("spawn_mobs", "doMobSpawning", "false"), ("respawn_radius", "spawnRadius", "0")]:
-        if not mcp.cmd(f"gamerule {new} {value}")[0]:
-            mcp.cmd(f"gamerule {old} {value}")
+    """Always day, clear sky, no mobs, Mars gravity. (Names checked live in Minecraft 26.3.)"""
     # Mars g = 3.71 m/s^2 = 0.378 x Earth (NASA Mars Fact Sheet). Minecraft's gravity 0.08 x 0.378 = 0.0302.
-    for name in ("minecraft:gravity", "minecraft:generic.gravity"):
-        if mcp.cmd(f"attribute @s {name} base set 0.0302")[0]:
-            break
-    for name in ("minecraft:safe_fall_distance", "minecraft:generic.safe_fall_distance"):
-        if mcp.cmd(f"attribute @s {name} base set 7.9")[0]:
-            break
-    for c in ["time set noon", "weather clear", "difficulty peaceful",
+    for c in ["gamerule advance_time false", "gamerule advance_weather false",
+              "gamerule spawn_mobs false", "gamerule respawn_radius 0",
+              "attribute @s minecraft:gravity base set 0.0302",
+              "attribute @s minecraft:safe_fall_distance base set 7.9",
+              "time set noon", "weather clear", "difficulty peaceful",
               f"worldborder center {jm.X_MIN + jm.WIDTH // 2} {jm.Z_MIN + jm.HEIGHT // 2}",
               f"worldborder set {min(jm.WIDTH, jm.HEIGHT)}"]:
         mcp.cmd(c)
