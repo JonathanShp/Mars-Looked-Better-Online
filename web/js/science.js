@@ -4,7 +4,9 @@
 // IMPORTANT: every protocol below is a FIXED TEMPLATE written by the team from the
 // published Mars 2020 instrument papers. Nothing here is generated, and no measurement
 // or result is invented. The only made-up numbers are the MINUTES, which are a team
-// assumption (MINUTES_SOURCE) picked so one station fits the 30 min the planner budgets.
+// assumption (MINUTES_SOURCE) picked so the must-do steps of one station add up to exactly
+// the 30 min the planner budgets per station (MODELS.stationWorkMinutes). The IF TIME steps
+// are the overrun, and the cuff says so.
 //
 // Which protocols a station gets comes from the Question layer, which says what orbit
 // CANNOT already tell us there:
@@ -39,7 +41,7 @@ const BASELINE = [
     stands_for: "SuperCam, laser spectroscopy from a distance (out to roughly 7 m)",
     why: "Decide which few rocks are worth touching before spending suit time on any of them.",
     where: "Pick three rocks 2 to 7 m away that differ: one bedrock face, one loose rock, one dusty patch.",
-    minutes: 5,
+    minutes: 4,
     steps: [
       "Number the three targets in the panorama and photograph each one zoomed in.",
       "For each: note grain size, colour, layering, and whether it is in place or loose.",
@@ -62,7 +64,7 @@ const PROTOCOLS = {
         stands_for: "the abrading bit with WATSON and SHERLOC (close-up camera, deep-UV Raman and fluorescence)",
         why: "Mars is covered in dust and a weathered rind. The real rock starts a few millimetres down.",
         where: "On bedrock still attached to the ground, on a face you can reach standing up.",
-        minutes: 10,
+        minutes: 9,
         steps: [
           "Brush the dust off a patch about the size of your palm.",
           "Grind a flat patch about 5 cm across and a few mm deep, the size Perseverance makes.",
@@ -78,7 +80,7 @@ const PROTOCOLS = {
         stands_for: "PIXL, micro X-ray fluorescence with a spot about a tenth of a millimetre wide",
         why: "A map of which elements sit where tells you whether the rock is volcanic or was laid down in water.",
         where: "The patch you just abraded, without moving the scale bar.",
-        minutes: 5,
+        minutes: 4,
         steps: [
           "Lay a grid over the close-up photo: a few millimetres across, ten by ten.",
           "Work across the grid and note every change of colour or crystal shape, cell by cell.",
