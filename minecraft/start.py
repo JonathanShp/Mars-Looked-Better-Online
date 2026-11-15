@@ -28,11 +28,13 @@ def say(text):
 
 
 def wait_until_in_world(mcp, seconds=180):
-    """A big world can still be loading when the mod answers, so try a harmless command until it works."""
+    """A big world can still be loading when the mod answers, so ask where the player is until it knows.
+    No world yet = error "Not in a world". Pause menu open = the world won't run our commands yet."""
     for _ in range(seconds // 3):
         time.sleep(3)
         try:
-            if mcp.cmd("time query gametime")[0]:
+            ok, text = mcp.call("get_player_state", {}, timeout=30)
+            if ok and "game is paused" not in text:
                 return
         except OSError:
             pass                              # the mod is busy loading: try again
