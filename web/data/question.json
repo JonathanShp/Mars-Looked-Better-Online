@@ -1,0 +1,24 @@
+{
+  "bits": {
+    "1": "Rover never went there (>500 m from Perseverance traverse)",
+    "2": "Only coarse terrain (outside HiRISE 1 m DTM; only 20 m CTX DTM)",
+    "4": "Geologic contact (within 100 m of a bedrock-unit boundary)"
+  },
+  "score_percent": {
+    "0": 1.6,
+    "1": 24.6,
+    "2": 73.8,
+    "3": 0.0
+  },
+  "signal_percent": {
+    "far_from_rover": 97.1,
+    "outside_hirise_dtm": 68.5,
+    "near_contact": 6.6
+  },
+  "sources": [
+    "Mars 2020 traverse to sol 2022, NASA/JPL MMGIS (M20_traverse.json)",
+    "USGS Mars 2020 TRN HiRISE DTM 1 m (JEZ_hirise_soc_006 ... blend40)",
+    "Stack et al. 2020 photogeologic map, doi:10.1007/s11214-020-00739-x"
+  ],
+  "rules": "Team-written thresholds from the MarsCuff playbook: 500 m, outside footprint, 100 m."
+}

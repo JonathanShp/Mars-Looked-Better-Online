@@ -1,0 +1,32 @@
+{
+  "rows": 756,
+  "cols": 798,
+  "cell_size_m_projected": 40.0,
+  "bounds_deg": {
+    "west": 77.16046545922367,
+    "east": 77.69897516629472,
+    "south": 18.211027390963398,
+    "north": 18.721194481872804
+  },
+  "bounds_m": {
+    "west": 4573663.250853,
+    "east": 4605583.250853,
+    "south": 1079453.140188,
+    "north": 1109693.140188
+  },
+  "mars_radius_m": 3396190.0,
+  "layout": "int16 little-endian; first rows*cols = elevation (m), next rows*cols = slope (tenths of a degree); row 0 = north",
+  "nodata": -32768,
+  "elevation_range_m": [
+    -2710.6336669921875,
+    -1515.8949890136719
+  ],
+  "nodata_cells": 0,
+  "method": "Slope from 20 m pixels (central differences, true ground spacing with cos(latitude)); 40 m cell = mean elevation, MAX slope of 2x2 block.",
+  "source": {
+    "name": "Mars 2020 Terrain Relative Navigation CTX DTM mosaic (20 m/px)",
+    "mission": "MRO CTX (stereo), tied to MGS MOLA",
+    "publisher": "USGS Astrogeology Science Center",
+    "url": "https://planetarymaps.usgs.gov/mosaic/mars2020_trn/CTX/JEZ_ctx_B_soc_008_DTM_MOLAtopography_DeltaGeoid_20m_Eqc_latTs0_lon0.tif"
+  }
+}

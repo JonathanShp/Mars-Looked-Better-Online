@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MarsCuff</title>
+  <!-- Leaflet 1.9.4 (open-source map library, BSD-2 licence) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/cuff.css">
+</head>
+<body>
+  <div id="map"></div>
+  <div id="plan" class="panel">
+    <b>MarsCuff · Jezero Marswalk</b>
+    <div class="buttons">
+      <button id="btn-habitat">1 · Habitat</button>
+      <button id="btn-station">2 · Stations</button>
+      <button id="btn-clear">Clear</button>
+      <button id="btn-demo">▶ Demo</button>
+    </div>
+    <div class="buttons">
+      <button id="btn-preview">Preview cuff</button>
+      <button id="btn-print">Print cuff</button>
+    </div>
+    <div id="plan-out">Loading NASA data…</div>
+  </div>
+  <div id="cuff-viewer">
+    <button id="btn-close-cuff">Back to map</button>
+    <div id="cuff"></div>
+  </div>
+  <div id="layers" class="panel">Loading NASA data…</div>
+  <div id="readout" class="panel">Point at (or tap) Jezero Crater</div>
+  <div id="caption" hidden></div>
+
+  <!-- Our code, in the order it is needed -->
+  <script src="js/models.js"></script>
+  <script src="js/grid.js"></script>
+  <script src="js/layers.js"></script>
+  <script src="js/route.js"></script>
+  <script src="js/plan.js"></script>
+  <script src="js/science.js"></script>
+  <script src="js/cuff.js"></script>
+  <script src="js/planui.js"></script>
+  <script src="js/demo.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+# Grid files are raw numbers: never change their bytes
+*.bin binary

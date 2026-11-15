@@ -1,0 +1,37 @@
+/* cuff.css - the printed wrist checklist: 3 x 5 inch pages, black on white,
+   big bold text you can read through a helmet visor (Apollo cuff style). */
+
+#cuff-viewer { display: none; }
+body.show-cuff #cuff-viewer { display: block; position: fixed; inset: 0; z-index: 3000;
+  background: #2a2a2a; overflow-y: auto; padding: 16px; }
+#btn-close-cuff { position: sticky; top: 0; z-index: 1; background: #c1502e; color: #fff;
+  border: 0; border-radius: 4px; padding: 8px 14px; cursor: pointer; }
+#cuff { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; margin-top: 12px; }
+
+.cuff-page { width: 3in; height: 5in; box-sizing: border-box; overflow: hidden;
+  padding: 0.14in 0.15in 0.12in 0.3in;          /* wider left margin = spiral binding */
+  background: #fff; color: #000; font: 10pt/1.25 "Arial Narrow", Arial, sans-serif;
+  border-left: 3px dotted #999; position: relative; }
+.cuff-page header { display: flex; justify-content: space-between; align-items: baseline;
+  font-weight: 800; font-size: 11pt; border-bottom: 2px solid #000; margin-bottom: 5px; }
+.cuff-page header span { font-size: 6.5pt; font-weight: 600; }
+.cuff-page p { margin: 4px 0; }
+.cuff-map canvas { width: 2.55in; height: 2.74in; display: block; border: 1px solid #000; }
+.cuff-small { font-size: 7pt; line-height: 1.2; color: #222; }
+.cuff-table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+.cuff-table td { border-bottom: 1px solid #bbb; padding: 1.5px 2px; vertical-align: top; }
+.cuff-table td:first-child { font-weight: 800; width: 0.5in; white-space: nowrap; }
+.cuff-unit { font-size: 12pt; font-weight: 800; }
+.cuff-flag { font-weight: 800; font-size: 8.5pt; border: 1.5px solid #000; padding: 1px 3px; margin: 3px 0; }
+.cuff-tasks { padding-left: 1.2em; margin: 4px 0; }
+.cuff-tasks li { margin-bottom: 4px; }
+
+/* Printing: only the cuff pages, one per sheet of 3 x 5 inch paper. */
+@media print {
+  @page { size: 3in 5in; margin: 0; }
+  body { background: #fff; }
+  #map, .panel, #btn-close-cuff { display: none !important; }
+  #cuff-viewer { display: block !important; position: static; padding: 0; background: #fff; overflow: visible; }
+  #cuff { display: block; margin: 0; }
+  .cuff-page { border-left: none; page-break-after: always; break-after: page; }
+}

@@ -1,0 +1,27 @@
+{
+  "units": {
+    "1": "Crater floor fractured 1",
+    "2": "Crater floor fractured 2",
+    "3": "Crater floor fractured rough",
+    "4": "Crater rim blocky",
+    "5": "Crater rim breccia",
+    "6": "Crater rim layered",
+    "7": "Crater rim rough",
+    "8": "Delta blocky",
+    "9": "Delta layered rough",
+    "10": "Delta thickly layered",
+    "11": "Delta thinly layered",
+    "12": "Delta truncated curvilinear layered",
+    "13": "Margin fractured",
+    "14": "Neretva Vallis layered",
+    "15": "Nili Planum fractured"
+  },
+  "unmapped_id": 0,
+  "mapped_cells_percent": 25.7,
+  "source": {
+    "name": "Photogeologic map of the Perseverance rover field site (bedrock units)",
+    "citation": "Stack et al. 2020, Space Science Reviews 216:127, doi:10.1007/s11214-020-00739-x, CC BY 4.0",
+    "mission": "Mars 2020 Science Team, mapped on MRO HiRISE images",
+    "url": "https://doi.org/10.1007/s11214-020-00739-x"
+  }
+}

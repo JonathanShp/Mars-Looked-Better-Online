@@ -1,0 +1,7 @@
+# Raw downloads (USGS / NASA / Springer) - big, and the prep scripts say where to get them
+data/raw/
+data/interim/
+# Python + local tool folders
+__pycache__/
+*.pyc
+.claude/
