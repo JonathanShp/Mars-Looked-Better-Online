@@ -32,6 +32,9 @@ BLOCKS = [
     "light_gray_terracotta", "yellow_terracotta", "red_terracotta", "gray_terracotta",
     "packed_mud", "smooth_basalt", "basalt", "blackstone", "tuff", "granite",
     "andesite", "cobbled_deepslate",
+    # Route markers (not Mars: these are the signposts for the walk). Added at the
+    # END of the list so every block index above keeps the value it already had.
+    "glowstone", "white_concrete", "purple_concrete", "red_concrete",
 ]
 ID = {name: i for i, name in enumerate(BLOCKS)}
 

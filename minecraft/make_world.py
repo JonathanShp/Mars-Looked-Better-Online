@@ -242,6 +242,51 @@ def rover_track_blocks(chunks, width=3):
     return pts[in_corridor]
 
 
+# ---------------------------------------------------------------- 2b. route markers
+# A world handed to someone who has no mod has no arrows, beams or book, so the
+# route has to be IN the ground: glowing pillars at the habitat, the stations and
+# the Point of No Return, and a line of glowstone on the ground to follow.
+MARK_PATH = ("glowstone", 1)            # one block on the ground, every path point
+MARK_HABITAT = ("white_concrete", 40)   # tallest, visible from a long way off
+MARK_STATION = ("purple_concrete", 30)
+MARK_PNR = ("red_concrete", 30)
+
+def route_marker_blocks(plan, chunks):
+    """{(x, z): (block id, how many blocks tall)} for the markers inside the corridor.
+
+    A pillar is a glowstone core (so it glows at night) wearing a coloured shell,
+    which is how you tell a station from home from a distance.
+    """
+    if not plan:
+        return {}
+    want = set(chunks)
+    marks = {}
+
+    def put(x, z, name, height):
+        if ((int(x) >> 4), (int(z) >> 4)) in want:
+            marks[(int(x), int(z))] = (ID[name], height)
+
+    for p in plan.get("path") or []:
+        x, z = jm.block_of_cell(p[0], p[1])
+        put(x, z, *MARK_PATH)
+
+    def pillar(cell, shell_height, shell):
+        x, z = jm.block_of_cell(cell["row"], cell["col"])
+        put(x, z, "glowstone", shell_height + 6)        # core, sticking out of the top
+        for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            put(x + dx, z + dz, shell, shell_height)
+
+    hab = plan.get("habitat")
+    if hab:
+        pillar(hab, MARK_HABITAT[1], MARK_HABITAT[0])
+    for st in plan.get("stations") or []:
+        pillar(st, MARK_STATION[1], MARK_STATION[0])
+    pnr = plan.get("pnr")
+    if pnr:
+        pillar(pnr, MARK_PNR[1], MARK_PNR[0])
+    return marks
+
+
 # ---------------------------------------------------------------- 3. tiny NBT writer
 # Each value is written as (tag type, value). Only the types a chunk needs.
 def _str(s):
@@ -287,9 +332,14 @@ def pack_indices(idx, bits):
 
 DESERT = ("compound", {"palette": ("list", ("string", ["minecraft:desert"]))})
 
-def chunk_nbt(cx, cz, ground, top_block, under, boulder, layered):
-    """All arguments except cx/cz are 16x16 arrays [z, x] for this chunk."""
-    max_y = int(ground.max()) + 1                                     # +1 leaves room for boulders
+def chunk_nbt(cx, cz, ground, top_block, under, boulder, layered, marks=None):
+    """All arguments except cx/cz and marks are 16x16 arrays [z, x] for this chunk.
+
+    marks: {(local x, local z): (block id, height)} route pillars to stand on the
+    ground here (see route_marker_blocks).
+    """
+    tallest = max([h for _b, h in (marks or {}).values()] or [0])
+    max_y = int(ground.max()) + 1 + tallest                           # +1 leaves room for boulders
     ys = np.arange(-64, (max_y // 16 + 1) * 16)[:, None, None]        # y, z, x
     depth = ground[None] - ys                                         # 0 = surface block, -1 = just above
     blocks = np.full(depth.shape, ID["smooth_basalt"], dtype=np.uint8)
@@ -307,6 +357,11 @@ def chunk_nbt(cx, cz, ground, top_block, under, boulder, layered):
     rocks = (depth == -1) & (np.broadcast_to(boulder[None], depth.shape) > 0)
     blocks[rocks] = np.broadcast_to(boulder[None], depth.shape)[rocks]
     blocks[ys[:, 0, 0] == -64] = ID["bedrock"]
+
+    # Route markers last, so nothing else overwrites them.
+    for (lx, lz), (block_id, height) in (marks or {}).items():
+        y0 = int(ground[lz, lx]) + 1
+        blocks[y0 + 64:y0 + 64 + height, lz, lx] = block_id
 
     sections = []
     deep_below = int(ground.min()) - 13          # every block at or below this y is plain deep rock
@@ -361,7 +416,7 @@ def write_region(path, chunks):
 
 
 # ---------------------------------------------------------------- 6. data pack (Mars sky, gravity, no rain)
-def write_datapack(root):
+def write_datapack(root, plan=None):
     pack = os.path.join(root, "datapacks", "marscuff")
     os.makedirs(os.path.join(pack, "data", "minecraft", "worldgen", "biome"), exist_ok=True)
     os.makedirs(os.path.join(pack, "data", "marscuff", "function"), exist_ok=True)
@@ -398,6 +453,22 @@ def write_datapack(root):
                 "execute as @a run attribute @s minecraft:gravity base set 0.0302\n"
                 "execute as @a run attribute @s minecraft:safe_fall_distance base set 7.9\n")
 
+    # Where you start, and a way back if you ever lose the pillars. The "load" tag
+    # runs once when the world opens, before anyone has spawned, so setworldspawn
+    # here is what puts a first-time player at the habitat.
+    hab = (plan or {}).get("habitat")
+    if hab:
+        hx, hz = jm.block_of_cell(hab["row"], hab["col"])
+        hy = jm.ground_y(hx, hz) + 1
+        json.dump({"values": ["marscuff:load"]},
+                  open(os.path.join(pack, "data", "minecraft", "tags", "function", "load.json"), "w"))
+        with open(os.path.join(pack, "data", "marscuff", "function", "load.mcfunction"), "w") as f:
+            f.write("# Start the walk at the habitat\n"
+                    "setworldspawn %d %d %d\n" % (hx, hy, hz))
+        with open(os.path.join(pack, "data", "marscuff", "function", "home.mcfunction"), "w") as f:
+            f.write("# /function marscuff:home - back to the habitat\n"
+                    "teleport @s %d %d %d\n" % (hx, hy, hz))
+
 
 # ---------------------------------------------------------------- 7. building
 def region_dir(save):
@@ -406,9 +477,9 @@ def region_dir(save):
     return os.path.join(new, "region") if os.path.isdir(new) else os.path.join(save, "region")
 
 
-def _init_worker(tracks, region, base):
-    global _TRACKS, REGION
-    _TRACKS, REGION = tracks, region
+def _init_worker(tracks, region, base, marks=None):
+    global _TRACKS, REGION, _MARKS
+    _TRACKS, REGION, _MARKS = tracks, region, marks or {}
     jm.set_elevation_base(base)
 
 
@@ -423,9 +494,12 @@ def make_region(job):
     out = {}
     for cx, cz in chunk_list:
         x, z = cx * 16 - x0, cz * 16 - z0
+        here = {(mx & 15, mz & 15): m for (mx, mz), m in _MARKS.items()
+                if (mx >> 4) == cx and (mz >> 4) == cz}
         out[(cx & 31, cz & 31)] = chunk_nbt(
             cx, cz, ground[z:z + 16, x:x + 16], top[z:z + 16, x:x + 16],
-            under[z:z + 16, x:x + 16], boulder[z:z + 16, x:x + 16], layered[z:z + 16, x:x + 16])
+            under[z:z + 16, x:x + 16], boulder[z:z + 16, x:x + 16], layered[z:z + 16, x:x + 16],
+            here)
     write_region(os.path.join(REGION, "r.%d.%d.mca" % (rx, rz)), out)
     return len(out)
 
@@ -446,7 +520,7 @@ def stored_base(root):
     return None
 
 
-def build(chunks, root, region, write_pack=True, label="", base=None):
+def build(chunks, root, region, write_pack=True, label="", base=None, plan=None):
     """Write the terrain for `chunks` into `region`. Returns the info dict."""
     from multiprocessing import Pool, cpu_count
     t0 = time.time()
@@ -472,7 +546,8 @@ def build(chunks, root, region, write_pack=True, label="", base=None):
     jobs = sorted(groups.items())
     workers = max(1, min(len(jobs), cpu_count() - 2))
     print("2/3 writing %d region files with %d workers ..." % (len(jobs), workers))
-    with Pool(workers, initializer=_init_worker, initargs=(tracks, region, base)) as pool:
+    marks = route_marker_blocks(plan, chunks)
+    with Pool(workers, initializer=_init_worker, initargs=(tracks, region, base, marks)) as pool:
         done = 0
         for k, n in enumerate(pool.imap_unordered(make_region, jobs), 1):
             done += n
@@ -482,7 +557,7 @@ def build(chunks, root, region, write_pack=True, label="", base=None):
 
     print("3/3 data pack + map info ...")
     if write_pack:
-        write_datapack(root)
+        write_datapack(root, plan)
     info = jm.describe()
     box = corridor_bounds(chunks)
     info["corridor"] = {
@@ -505,7 +580,7 @@ def build(chunks, root, region, write_pack=True, label="", base=None):
 
 
 # ---------------------------------------------------------------- 8. handing the world to someone
-HOW_TO_USE = """MARSCUFF - JEZERO CRATER, FOR REAL
+SETUP = """MARSCUFF - JEZERO CRATER, FOR REAL
 ==================================
 
 This is a Minecraft world made from NASA/USGS maps of Jezero Crater, the place
@@ -513,17 +588,25 @@ Perseverance landed in February 2021. One Minecraft block is one metre of Mars,
 sideways AND up, so the hills are the real hills and the climbs are the real
 climbs. Block 0, 0 is the landing site.
 
+You do NOT need any mod, any add-on or Python to walk this. It is an ordinary
+Minecraft Java Edition save.
+
 HOW TO SET IT UP
 1. Unzip this folder.
 2. Put the folder "%(save)s" inside your Minecraft saves folder:
      Windows  %%APPDATA%%\\.minecraft\\saves
      macOS    ~/Library/Application Support/minecraft/saves
      Linux    ~/.minecraft/saves
-3. Start Minecraft Java Edition, open Singleplayer, and the world is in the list.
-4. The first time you open it, go to Options -> Data Packs (or Edit -> Data Packs
-   from the world list) and make sure "MarsCuff" is switched on. That is what
-   gives you the butterscotch sky, no rain, and Mars gravity (0.378 x Earth, so
-   you jump about two and a half times as high and fall gently).
+3. Start Minecraft Java Edition 26.3 (the version this world was built for), open
+   Singleplayer, and the world is in the list. It says "Experimental Settings"
+   when you open it, because the world carries its own data pack - that is
+   expected, so choose to load it anyway.
+4. The data pack "MarsCuff" is already switched on. It is what gives you the
+   butterscotch sky, no rain, and Mars gravity (0.378 x Earth, so you jump about
+   two and a half times as high and fall gently). If the sky ever looks like
+   Earth, open Options -> Data Packs from the world list and switch it back on.
+5. You start at the habitat. Press F3 to see your coordinates: the numbers below
+   are block X and Z, and the world is 1 block = 1 metre.
 
 WHAT YOU ARE LOOKING AT
   * the ground            USGS CTX digital terrain model, 40 m cells, smoothed
@@ -533,28 +616,112 @@ WHAT YOU ARE LOOKING AT
   * the small craters     added by us: real Mars has them at this size, the
                           40 m map cannot see them (labelled MODEL, not data)
 
+HOW TO FOLLOW THE WALK
+  * a line of glowing yellow blocks on the ground is your route - follow it
+  * a tall WHITE pillar with a glowing top is the habitat: home
+  * a tall PURPLE pillar is a science station: stop and work it
+  * a tall RED pillar, if there is one, is the Point of No Return: past it you
+    no longer have the air to walk home, so it is the hard turn-around
+  * lost? Open to LAN / enable cheats and run  /function marscuff:home
+
 WHY THE WORLD JUST STOPS
 Only the ground near your planned walk was built: %(area)s km2 of it. Building
 all 900 km2 of the map would be about 14 GB. The empty edge is the edge of what
 was generated, not a cliff on Mars. Plan a different walk on the website and
 generate again to get a different strip.
-
-THE EVA
-Your route, timings and the Point of No Return are on the paper cuff and in the
-written book you start with. Work the stations in order, do the experiments on
-the cuff, and get home before the clock runs out.
 """
 
+WHY_SCIENCE = """WHY THESE EXPERIMENTS, AND WHAT THE RESULTS WOULD BE FOR
+Every station sits where the orbital maps are least sure of themselves: ground
+nobody has driven, ground only ever seen at 20 m per pixel, or a mapped boundary
+between two rock units that has never been checked from the surface. That is the
+whole point of walking there instead of somewhere pretty.
 
-def export_zip(save, dest):
+The tasks on the cuff are the ones that turn a guess into a measurement:
+  * a close-up photo and one sample give the first ground truth for a unit that
+    until now is only a colour on a map
+  * photographing a contact from two sides, with a sample on each side, is what
+    tells you which rock came first - that is how the order of events in Jezero
+    gets settled, and Jezero is where the Mars Sample Return samples come from
+  * a footing note (how the surface takes a boot) feeds the engineering models
+    that decide where crews and rovers can actually go
+  * the weather log at the habitat is the boring one that matters: repeated
+    local readings are what turn one day of data into a climate record
+
+So the results help in two real ways: they correct the maps that everything else
+is planned from, and they say whether the ground is safe to work on.
+
+HONESTY ABOUT THE NUMBERS
+The ground, the rock units and the rover track are real data (sources at the end
+of the cuff). The walking speed, the 30 minutes of work per station and the air
+budget are a MODEL - the Tobler hiking function slowed to 0.6 for a suit, plus
+our own team assumptions. They are labelled that way on the website too. Nothing
+here is a NASA timeline.
+"""
+
+def how_to_use(save_name, info, plan):
+    """The whole HOW-TO-USE.txt: setup, then the walk, then the cuff, then why."""
+    area = (info.get("corridor") or {}).get("area_km2", "?")
+    out = [SETUP % {"save": save_name, "area": area}]
+
+    if not plan:
+        out.append("YOUR WALK\nThis world was built without a route (a plain disc of ground around the\n"
+                   "landing site), so there are no stations in it. Plan a walk on the website\n"
+                   "and generate again.\n")
+        out.append(WHY_SCIENCE)
+        return "\n".join(out)
+
+    rows = ["YOUR WALK - WHERE TO GO (block coordinates, press F3 in game)", ""]
+
+    def place(label, cell, extra=""):
+        x, z = jm.block_of_cell(cell["row"], cell["col"])
+        rows.append("  %-22s X %6d   Z %6d   %s" % (label, x, z, extra))
+
+    hab = plan.get("habitat")
+    if hab:
+        place("habitat (white)", hab, "start and finish here")
+    for i, st in enumerate(plan.get("stations") or [], 1):
+        note = st.get("unit") or ""
+        if st.get("neverDriven"):
+            note += " - never driven"
+        place("station %d (purple)" % i, st, note.strip(" -"))
+    pnr = plan.get("pnr")
+    if pnr:
+        place("Point of No Return", pnr, "do not pass this after your leave-by time")
+    summary = plan.get("summary") or {}
+    if summary:
+        rows += ["", "  %s km on foot, %s of walking and working, %s of air."
+                 % (summary.get("km", "?"), summary.get("total", "?"), summary.get("usable", "?"))]
+    out.append("\n".join(rows) + "\n")
+
+    book = plan.get("book") or []
+    if book:
+        cuff = ["YOUR CUFF - THE SAME TEXT AS THE PRINTED PAPER CUFF",
+                "(on the website: Preview cuff / Print cuff)", ""]
+        for page in book:
+            cuff.append("  " + "\n  ".join(str(page).splitlines()))
+            cuff.append("  " + "-" * 46)
+        out.append("\n".join(cuff) + "\n")
+
+    out.append(WHY_SCIENCE)
+    return "\n".join(out)
+
+def export_zip(save, dest, plan=None):
     """Zip a finished save folder with a HOW-TO-USE.txt beside it."""
     name = os.path.basename(os.path.normpath(save))
     info = {}
     path = os.path.join(save, "world_info.json")
     if os.path.exists(path):
         info = json.load(open(path))
-    area = (info.get("corridor") or {}).get("area_km2", "?")
-    readme = HOW_TO_USE % {"save": name, "area": area}
+    # The bridge drops the last plan in the save; use it if we were not handed one.
+    if plan is None:
+        last = os.path.join(save, "marscuff_last_plan.json")
+        if os.path.exists(last):
+            plan = json.load(open(last))
+    # Block coordinates need the same anchor the terrain was built at.
+    if (info.get("elevation_base_m") or 0):
+        jm.set_elevation_base(info["elevation_base_m"])
+    readme = how_to_use(name, info, plan)
     with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("HOW-TO-USE.txt", readme)
         for folder, _dirs, files in os.walk(save):
@@ -579,6 +746,7 @@ def main():
     else:
         os.makedirs(root, exist_ok=True)
 
+    plan = None
     if args.route:
         plan = json.load(open(args.route))
         points = route_points(plan)
@@ -591,10 +759,13 @@ def main():
     chunks = corridor_chunks(points)
     if not chunks:
         sys.exit("That route is not inside the NASA map, so there is no data to build from.")
-    build(chunks, root, region_dir(root), write_pack=True, label=label, base=stored_base(root))
+    build(chunks, root, region_dir(root), write_pack=True, label=label,
+          base=stored_base(root), plan=plan)
+    if plan:
+        json.dump(plan, open(os.path.join(root, "marscuff_last_plan.json"), "w"))
 
     if args.zip_to:
-        export_zip(root, args.zip_to)
+        export_zip(root, args.zip_to, plan)
 
 
 if __name__ == "__main__":

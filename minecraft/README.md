@@ -5,7 +5,7 @@ The website plans a Marswalk. This folder lets you **walk it in Minecraft**:
 1. **Spawn** at Perseverance's real landing site. The dark strip on the ground is the rover's real driving track.
 2. On the website (opened from this computer), **plan a walk** and press **⛏ Send to Minecraft**.
 3. The bridge closes the world, **builds the Mars ground along that walk**, and opens it again (about 30–60 seconds).
-4. You're **teleported into your habitat** (base). From there:
+4. You're **teleported into your habitat** (base). From there, **with the mod running**:
    - **big glowing arrows** float 25 m up, every 40 m along the route; red arrows mean you're past the Point of No Return;
    - a **white beam** marks home, **purple beams** mark stations (each with a sign: rock type, arrive / leave-by time), and a **red beam** marks the Point of No Return;
    - your **cuff is a book** in your hotbar (right-click to open it): route, timeline, and the experiments to do at each station. The chat link opens the full printable cuff.
@@ -62,7 +62,16 @@ A built save is an ordinary Minecraft world, so it can simply be handed over:
 python minecraft/make_world.py --route plan.json --save "<a closed, empty save>" --zip MarsCuff.zip
 ```
 
-The zip holds the save plus a **HOW-TO-USE.txt** that explains unzipping it into the saves folder (Windows / macOS / Linux paths), switching the **MarsCuff** data pack on for the sky and Mars gravity, what the colours and strips mean, and why the world stops at the edge of the corridor. They need no mod and no Python — only Minecraft Java Edition.
+Nobody is left staring at empty ground: the markers are built **into the terrain**, so they work with no mod at all.
+A tall **white** pillar is the habitat, **purple** pillars are the stations, a **red** one is the Point of No Return,
+and a line of glowstone on the ground is the route. Each pillar has a glowstone core, so they glow at night.
+The data pack sets the world spawn at the habitat, and `/function marscuff:home` walks you back if you get lost.
+
+The zip also holds a **HOW-TO-USE.txt**: how to unzip it into the saves folder (Windows / macOS / Linux),
+what the colours, strips and craters are made from, the block X/Z of the habitat and every station,
+the whole cuff as text, and **why these experiments** — each station sits where the orbital maps are least
+sure (never driven, only 20 m/px, or an unchecked contact), and what a photo plus a sample there would settle.
+Which numbers are data and which are our model is spelled out. They need no mod and no Python — only Minecraft Java Edition.
 
 ## Files
 - `jezero_map.py`: how Mars coordinates turn into blocks (shared by everything below)

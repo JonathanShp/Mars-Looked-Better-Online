@@ -105,8 +105,10 @@ const MC = {
     const cover = `MARSCUFF\nJezero EVA cuff\n\n${(res.metres / 1000).toFixed(2)} km walk\n` +
       `${hm(res.totalSeconds)} of ${hm(res.usable)} usable\n${res.fits ? "FITS" : "TOO LONG"}\n` +
       (res.pnr ? `PNR at EVA ${hm(res.pnr.clock)}` : "No Point of No Return");
-    const how = "HOW TO FOLLOW\nGlowing arrows in the sky = route.\nRed arrows = past the PNR.\n" +
-      "White beam = habitat.\nPurple beams = stations.\nRed beam = PNR.";
+    // True whichever way you walk it: the live mod draws arrows and beams, the
+    // downloaded world has the same colours as tall pillars you can see far off.
+    const how = "HOW TO FOLLOW\nWHITE = habitat.\nPURPLE = stations.\nRED = no return.\n" +
+      "Glowing = route.\n(beams in game,\npillars in the zip)";
     const timeline = "TIMELINE\n" + res.events.map((e) =>
       `${hm(e.t)} ${e.what.replace("station", "sta")}${e.turnBackBy !== undefined ? ` (go by ${hm(e.turnBackBy)})` : ""}${e.beyondPnr ? " PAST PNR" : ""}`).join("\n");
     const hp = Science.habitatProtocol;
