@@ -64,4 +64,4 @@ Raw downloads go in `data/raw/` (see the sources below).
 - We model **time, not litres of oxygen**: an O2 figure for a Mars suit that doesn't exist yet would be invented.
 
 ## Software
-Leaflet 1.9.4 (BSD-2), rasterio, numpy, scipy, shapely, pyogrio (Python). AI tool: Claude (Anthropic) helped write and debug code.
+Leaflet 1.9.4 (BSD-2), rasterio, numpy, scipy, shapely, pyogrio (Python).
