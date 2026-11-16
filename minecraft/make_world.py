@@ -32,6 +32,7 @@
 import argparse
 import io
 import json
+import shutil
 import math
 import os
 import struct
@@ -545,6 +546,19 @@ def mission_functions(plan):
     return out
 
 # ---------------------------------------------------------------- 6. data pack (Mars sky, gravity, no rain)
+WORLDGEN_TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 "templates", "world_gen_settings.dat")
+
+
+def write_worldgen_settings(root):
+    """Minecraft 26.3 keeps the world-generation settings in their own file, not in
+    level.dat. Without it the game throws "Overworld settings missing" and shows a
+    misleading data-pack error, so every save we build needs a copy."""
+    out = os.path.join(root, "data", "minecraft")
+    os.makedirs(out, exist_ok=True)
+    shutil.copy(WORLDGEN_TEMPLATE, os.path.join(out, "world_gen_settings.dat"))
+
+
 def write_datapack(root, plan=None):
     pack = os.path.join(root, "datapacks", "marscuff")
     os.makedirs(os.path.join(pack, "data", "minecraft", "worldgen", "biome"), exist_ok=True)
@@ -701,6 +715,7 @@ def build(chunks, root, region, write_pack=True, label="", base=None, plan=None)
     print("3/3 data pack + map info ...")
     if write_pack:
         write_datapack(root, plan)
+    write_worldgen_settings(root)
     info = jm.describe()
     box = corridor_bounds(chunks)
     info["corridor"] = {
