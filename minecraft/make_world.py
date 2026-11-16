@@ -533,8 +533,33 @@ def mission_functions(plan):
 
     if hab:
         hx, hz = jm.block_of_cell(hab["row"], hab["col"])
-        tick.append(TELEPORT_ONCE % (hx, jm.ground_y(hx, hz) + 2, hz))
+        # Stand BESIDE the habitat pillar: its centre cell is the glowstone core
+        # of a 46-block pillar, so spawning there puts you inside it.
+        sx = hx + 6
+        tick.append(TELEPORT_ONCE % (sx, jm.ground_y(sx, hz) + 2, hz))
     out["tick"] = "\n".join(tick) + "\n"
+
+    # --- the route, as a LINE. Path points are one per 40 m map cell, so one block
+    # per point leaves 40 blocks of nothing between dots. Fill it in: one glowstone
+    # every 2 blocks. setblock from the load tag needs no cheats.
+    line, seen = [], set()
+    pts = plan.get("path") or []
+    for a, b in zip(pts, pts[1:]):
+        x1, z1 = jm.block_of_cell(a[0], a[1])
+        x2, z2 = jm.block_of_cell(b[0], b[1])
+        steps = max(1, int(max(abs(x2 - x1), abs(z2 - z1)) / 2))
+        for i in range(steps):
+            x, z = x1 + (x2 - x1) * i // steps, z1 + (z2 - z1) * i // steps
+            if (x, z) in seen:
+                continue
+            seen.add((x, z))
+            line.append("setblock %d %d %d minecraft:glowstone" % (x, jm.ground_y(x, z) + 1, z))
+    if line:
+        # chr(10) is a newline: written this way so the generated file text
+        # carries no escapes of its own.
+        out["path"] = chr(10).join(
+            ["# The route, as a line you can actually follow."] + line + [""])
+
 
     # --- set up on load. The load tag runs every time the world is opened, so every
     # session starts a fresh EVA with a full tank: that is deliberate.
@@ -551,6 +576,8 @@ def mission_functions(plan):
     setup += _say(["", "MARSCUFF: a %d minute EVA. The air number above your hotbar is" % budget,
                    "your whole budget - walking, working and the walk home.",
                    "Follow the glowing line. Stand at a pillar to get your tasks."]).splitlines()
+    if out.get("path"):
+        setup.append("function marscuff:path")
     out["_load_extra"] = "\n".join(setup) + "\n"
     return out
 
