@@ -152,7 +152,7 @@ const PlanUI = {
       icon: L.divIcon({ className: `pin pin-${kind}`, html: label, iconSize: [26, 26] }),
     }).addTo(this.map);
     if (cardHtml) cardHtml += `<button class="remove-stop" data-remove="${stationIndex}">✕ Remove this station</button>`;
-    if (cardHtml) m.bindPopup(cardHtml, { maxWidth: 270, autoPanPadding: [10, 10] });   // tap a station pin = its card
+    if (cardHtml) m.bindPopup(cardHtml, { maxWidth: 270, maxHeight: 300, autoPanPadding: [10, 10] });   // tap a station pin = its card
     // Dragging a pin moves the habitat/station and recomputes everything.
     m.on("dragend", () => {
       const ll = m.getLatLng();

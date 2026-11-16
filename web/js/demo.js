@@ -65,7 +65,7 @@ const Demo = {
     PlanUI.previewCuff();
     await wait(4500);
 
-    say("MarsCuff · NASA data from 4 missions");
+    say("MarsCuff · NASA data from three missions");
     await wait(2500);
     say("");
     this.running = false;
@@ -73,3 +73,10 @@ const Demo = {
 };
 
 document.getElementById("btn-demo").onclick = () => Demo.play();
+
+// If you tap the map or a button yourself, the demo caption gets out of the way.
+document.addEventListener("click", (e) => {
+  if (e.isTrusted && !Demo.running && (e.target.closest("button") || e.target.closest("#map"))) {
+    document.getElementById("caption").hidden = true;
+  }
+}, true);

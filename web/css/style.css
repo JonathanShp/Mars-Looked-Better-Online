@@ -110,3 +110,13 @@ html, body { margin: 0; height: 100%; background: #000; color: var(--text); font
 .howto { margin: 4px 0 0; font-size: 13px; line-height: 1.45; color: var(--text-2); }
 .remove-stop { margin-top: 10px; width: 100%; padding: 8px; background: rgba(215, 0, 21, 0.08); color: var(--red);
   border: 0; border-radius: 980px; cursor: pointer; font: 500 12.5px var(--font); }
+
+/* Station card on the map: short. Just why, and the list of jobs with minutes.
+   The full step-by-step is on the printed checklist. */
+.leaflet-popup .task-why, .leaflet-popup .task-where, .leaflet-popup .task-steps,
+.leaflet-popup .protocols > li > small { display: none; }
+.leaflet-popup .protocols::after { content: "Full steps are on the printed checklist."; display: block;
+  margin-top: 6px; color: var(--text-2); font-size: 11.5px; }
+
+/* The demo caption never shows on paper */
+@media print { #caption { display: none !important; } }
