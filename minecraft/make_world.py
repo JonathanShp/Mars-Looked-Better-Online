@@ -415,6 +415,135 @@ def write_region(path, chunks):
         f.write(locations + stamps + body.getvalue())
 
 
+# ---------------------------------------------------------------- 6b. the mission layer
+# Without the mod there is no cuff and no clock, so there is nothing to ration and
+# nothing to read: you just wander. These are plain vanilla commands in the world's
+# own data pack, and they all run from the "tick" and "load" function tags, which the
+# game runs itself - so none of this needs cheats turned on.
+#
+# TIME COMPRESSION (this is OURS, not NASA's): one EVA minute every 200 ticks, i.e.
+# every 10 real seconds. A 384-minute air budget is then about 64 minutes of playing.
+TICKS_PER_EVA_MINUTE = 200
+ARRIVE_RADIUS = 30          # blocks: close enough to a pillar to count as "arrived"
+LEAVE_RADIUS = 60           # blocks: far enough away to re-arm it
+
+
+def _minutes(hhmm):
+    """'6:24' -> 384. Returns None if it is not a time."""
+    try:
+        h, m = str(hhmm).split(":")
+        return int(h) * 60 + int(m)
+    except (ValueError, AttributeError):
+        return None
+
+
+def _say(lines):
+    """One tellraw per line, to everyone. Gson-quoted so apostrophes are safe."""
+    return "".join('tellraw @a {"text":%s}\n' % json.dumps(t) for t in lines)
+
+
+def mission_functions(plan):
+    """{function name: file text} for the air clock, the cuff and the stations."""
+    if not plan:
+        return {}
+    out = {}
+    budget = _minutes((plan.get("summary") or {}).get("usable")) or 384
+
+    # --- the cuff, as chat text. Same pages as the paper cuff on the website.
+    pages = [str(p) for p in (plan.get("book") or [])]
+    cuff = ["", "=== YOUR CUFF ==="]
+    for page in pages:
+        cuff += [ln for ln in page.splitlines() if ln.strip()]
+        cuff.append("---")
+    cuff.append("Watch the air number above your hotbar. Walking home costs air too.")
+    out["cuff"] = "# The cuff, printed in chat\n" + _say(cuff)
+
+    # --- what to do at each station
+    places = []
+    for i, st in enumerate(plan.get("stations") or [], 1):
+        lines = ["", "=== STATION %d ===" % i]
+        if st.get("unit"):
+            lines.append("Rock unit here: %s" % st["unit"])
+        if st.get("neverDriven"):
+            lines.append("No rover has ever driven here. You are the first look.")
+        if st.get("leaveBy"):
+            lines.append("Leave by %s on the clock or you will not make it home." % st["leaveBy"])
+        for task in (st.get("tasks") or []):
+            text = task.get("task") if isinstance(task, dict) else str(task)
+            if text:
+                lines.append("- %s" % text)
+        if not (st.get("tasks")):
+            lines.append("Work the station list on your cuff: photo, triage, abrade,")
+            lines.append("chemistry, then the core. About 30 minutes of work.")
+        out["station%d" % i] = "# Arrived at station %d\n" % i + _say(lines)
+        places.append(("st%d" % i, st, "station%d" % i))
+
+    hab = plan.get("habitat")
+    if hab:
+        out["habitat"] = ("# Back at the habitat: the cuff again, and a fresh look at the air\n"
+                          + _say(["", "You are at the habitat. Cuff:"])
+                          + "function marscuff:cuff\n")
+        places.insert(0, ("home", hab, "habitat"))
+
+    # --- the clock
+    out["minute"] = (
+        "# One EVA minute has passed\n"
+        "scoreboard players set #ticks mc_clock 0\n"
+        "scoreboard players remove #air mc_air 1\n"
+        "execute if score #air mc_air matches ..0 if score #spent mc_air matches 0"
+        " run function marscuff:out_of_air\n")
+
+    out["out_of_air"] = (
+        "# The budget ran out. Nothing is taken away from you - this is the honest\n"
+        "# result of the plan, the same as a crew missing its walk-back margin.\n"
+        "scoreboard players set #spent mc_air 1\n"
+        "scoreboard players set #air mc_air 0\n"
+        'title @a title {"text":"OUT OF AIR"}\n'
+        + _say(["Your air budget is gone. On a real EVA this is the walk you did not",
+                "come back from. Plan a shorter route on the website and try again."]))
+
+    tick = ["# The mission clock. Runs every tick, as the server, for everyone online.",
+            "scoreboard players add #ticks mc_clock 1",
+            "execute if score #ticks mc_clock matches %d.. run function marscuff:minute"
+            % TICKS_PER_EVA_MINUTE,
+            "# Air left, above the hotbar, all the time.",
+            'title @a actionbar [{"text":"Air: "},{"score":{"name":"#air","objective":"mc_air"}},'
+            '{"text":" min of %d"}]' % budget]
+
+    # Arrival detection: stand near a pillar and its page prints, once. Walk away
+    # past LEAVE_RADIUS and it arms again, so you can come back to re-read it.
+    for key, cell, fn in places:
+        x, z = jm.block_of_cell(cell["row"], cell["col"])
+        y = jm.ground_y(x, z) + 1
+        tick += [
+            "# %s" % fn,
+            "execute if score #%s mc_at matches 0 positioned %d %d %d if entity @a[distance=..%d]"
+            " run function marscuff:arrive_%s" % (key, x, y, z, ARRIVE_RADIUS, key),
+            "execute if score #%s mc_at matches 1 positioned %d %d %d unless entity"
+            " @a[distance=..%d] run scoreboard players set #%s mc_at 0"
+            % (key, x, y, z, LEAVE_RADIUS, key)]
+        out["arrive_" + key] = ("scoreboard players set #%s mc_at 1\n" % key
+                                + "function marscuff:%s\n" % fn)
+
+    out["tick"] = "\n".join(tick) + "\n"
+
+    # --- set up on load. The load tag runs every time the world is opened, so every
+    # session starts a fresh EVA with a full tank: that is deliberate.
+    setup = ["# Mission set-up. Re-run every time the world opens = a fresh EVA.",
+             "scoreboard objectives add mc_air dummy",
+             "scoreboard objectives add mc_clock dummy",
+             "scoreboard objectives add mc_at dummy",
+             "scoreboard players set #air mc_air %d" % budget,
+             "scoreboard players set #spent mc_air 0",
+             "scoreboard players set #ticks mc_clock 0"]
+    for key, _cell, _fn in places:
+        setup.append("scoreboard players set #%s mc_at 0" % key)
+    setup += _say(["", "MARSCUFF: a %d minute EVA. The air number above your hotbar is" % budget,
+                   "your whole budget - walking, working and the walk home.",
+                   "Follow the glowing line. Stand at a pillar to get your tasks."]).splitlines()
+    out["_load_extra"] = "\n".join(setup) + "\n"
+    return out
+
 # ---------------------------------------------------------------- 6. data pack (Mars sky, gravity, no rain)
 def write_datapack(root, plan=None):
     pack = os.path.join(root, "datapacks", "marscuff")
@@ -468,6 +597,20 @@ def write_datapack(root, plan=None):
         with open(os.path.join(pack, "data", "marscuff", "function", "home.mcfunction"), "w") as f:
             f.write("# /function marscuff:home - back to the habitat\n"
                     "teleport @s %d %d %d\n" % (hx, hy, hz))
+
+    # The mission layer: air clock, cuff, station objectives (see 6b).
+    mission = mission_functions(plan)
+    load_extra = mission.pop("_load_extra", "")
+    for name, text in mission.items():
+        path = os.path.join(pack, "data", "marscuff", "function", name + ".mcfunction")
+        if name == "tick":
+            # Keep the gravity lines; the clock goes after them.
+            text = open(path).read() + "\n" + text
+        with open(path, "w") as f:
+            f.write(text)
+    if load_extra:
+        with open(os.path.join(pack, "data", "marscuff", "function", "load.mcfunction"), "a") as f:
+            f.write("\n" + load_extra)
 
 
 # ---------------------------------------------------------------- 7. building

@@ -77,6 +77,9 @@ const MC = {
         row: s.row, col: s.col, unit: info[k].unit,
         arrive: hm(arrive(k).t), leaveBy: hm(arrive(k).turnBackBy),
         beyondPnr: arrive(k).beyondPnr, neverDriven: info[k].neverDriven,
+        // The jobs for this station, so a world built with no mod can print them
+        // on arrival instead of a generic "work your cuff".
+        tasks: info[k].tasks,
       })),
       pnr: res.pnr ? { row: res.pnr.row, col: res.pnr.col, clock: res.pnr.clock, label: hm(res.pnr.clock) } : null,
       path,

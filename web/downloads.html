@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MarsCuff · Download a Marswalk</title>
+  <!-- Own small stylesheet on purpose: this page must keep working on its own. -->
+  <style>
+    body { margin: 0; background: #14100e; color: #f2e9e1;
+           font: 16px/1.55 system-ui, "Segoe UI", sans-serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 28px 18px 60px; }
+    h1 { font-size: 1.6rem; margin: 0 0 6px; }
+    h2 { font-size: 1.1rem; margin: 30px 0 8px; }
+    p, li { color: #e4d6ca; }
+    a { color: #ffb07c; }
+    .world { border: 1px solid #4a3a30; border-radius: 10px; padding: 14px 16px; margin: 14px 0;
+             background: #1d1715; }
+    .world h3 { margin: 0 0 4px; font-size: 1.05rem; }
+    .facts { color: #bda898; font-size: .9rem; margin: 2px 0 10px; }
+    .get { display: inline-block; background: #c1440e; color: #fff; text-decoration: none;
+           padding: 8px 14px; border-radius: 7px; font-weight: 600; }
+    .note { color: #bda898; font-size: .9rem; }
+    code { background: #2a211d; padding: 1px 5px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Download a Marswalk</h1>
+  <p>Three ready-made Minecraft worlds built from NASA/USGS maps of Jezero Crater, where
+     Perseverance landed in 2021. One block is one metre of Mars, sideways and up, so the hills
+     are the real hills. <b>No mod, no add-on and no Python needed</b> — they are ordinary
+     Minecraft <b>Java Edition 26.3</b> saves. Unzip into your <code>saves</code> folder and open.</p>
+
+  <h2>What you actually do in there</h2>
+  <p>You get an air budget — <b>384 minutes</b>, counted down above your hotbar, one EVA minute
+     every 10 real seconds, so a full walk is about an hour of playing. That budget covers
+     walking <i>and</i> working <i>and</i> the walk home, which is the whole problem: stop too
+     long at the second station and you do not make it back. Follow the line of glowing blocks.
+     A <b>white</b> pillar is home, a <b>purple</b> pillar is a science station, a <b>red</b>
+     one is the Point of No Return. Stand at a station and your cuff prints the jobs for that
+     rock — the photo, the sample, the abrasion, the chemistry — in chat.</p>
+  <p class="note">The ground, the rock units and the rover's track are real data. The walking
+     speed (Tobler's hiking function slowed to 0.6 for a suit), the 30 minutes of work per
+     station and the time compression are a model and our own team assumptions, not a NASA
+     timeline.</p>
+
+  <h2>Pick a walk</h2>
+
+  <div class="world">
+    <h3>Contacts — 7.5 km</h3>
+    <p class="facts">4:00 of walking and working · 6:24 of air · 3 stations · 15 MB</p>
+    <p>Every station sits on a mapped boundary between two rock units. Photographing a contact
+       from both sides and sampling each side is how you learn which rock came first — which is
+       how the order of events in Jezero gets settled. Start here.</p>
+    <a class="get" href="downloads/MarsCuff-contacts.zip">Download Contacts</a>
+  </div>
+
+  <div class="world">
+    <h3>Variety — 7.3 km</h3>
+    <p class="facts">3:56 of walking and working · 6:24 of air · 3 stations · 15 MB</p>
+    <p>Each station is uncertain in a different way: one never driven, one mapped only at 20 m
+       per pixel, one on a contact. Three different kinds of question in one walk.</p>
+    <a class="get" href="downloads/MarsCuff-variety.zip">Download Variety</a>
+  </div>
+
+  <div class="world">
+    <h3>Far Side — 10.9 km</h3>
+    <p class="facts">5:09 of walking and working · 6:24 of air · 3 stations · 21 MB</p>
+    <p>The long one. Three different rock units, all of them more than 500 m from anywhere the
+       rover has driven, so nobody has ever seen them from the ground. 5:09 against 6:24 of air
+       leaves very little slack — watch the clock.</p>
+    <a class="get" href="downloads/MarsCuff-far.zip">Download Far Side</a>
+  </div>
+
+  <h2>How to install</h2>
+  <ol>
+    <li>Unzip the file. Inside is a world folder and a <code>HOW-TO-USE.txt</code>.</li>
+    <li>Put the world folder in your saves folder:
+        <code>%APPDATA%\.minecraft\saves</code> on Windows,
+        <code>~/Library/Application Support/minecraft/saves</code> on macOS,
+        <code>~/.minecraft/saves</code> on Linux.</li>
+    <li>Open Minecraft Java Edition 26.3, Singleplayer, and the world is in the list. It warns
+        about "Experimental Settings" because it carries its own data pack — that is the air
+        clock and the Mars sky, so load it anyway.</li>
+  </ol>
+  <p>Want your own route instead? Plan one on the <a href="index.html">map</a> and read
+     <code>minecraft/README.md</code> for how to build it.</p>
+</main>
+</body>
+</html>
