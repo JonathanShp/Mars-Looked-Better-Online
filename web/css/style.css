@@ -1,64 +1,94 @@
-/* MarsCuff screen styles */
-html, body { margin: 0; height: 100%; background: #1a1210; color: #f3e9e2;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-#map { position: absolute; inset: 0; background: #1a1210; }
+/* MarsCuff screen styles.
+   Look: calm and clean, like an Apple product page. The real Mars map is the hero;
+   everything on top of it is frosted glass with dark text, one font, pill buttons,
+   and only two colors that mean something: blue = do this, red = danger. */
+:root {
+  --text: #1d1d1f;          /* near-black body text */
+  --text-2: #6e6e73;        /* secondary grey text */
+  --line: rgba(0, 0, 0, 0.08);
+  --glass: rgba(255, 255, 255, 0.78);
+  --btn: rgba(0, 0, 0, 0.06);
+  --blue: #0071e3;          /* the one action color */
+  --green: #248a3d;
+  --red: #d70015;
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+}
 
-.panel { position: absolute; z-index: 1000; background: rgba(26, 18, 16, 0.9);
-  border: 1px solid #5a3a30; border-radius: 6px; padding: 8px 10px; font-size: 13px;
-  line-height: 1.4; }
-#readout { left: 10px; bottom: 10px; max-width: 320px; }
-#readout small { color: #c8b2a6; }
+html, body { margin: 0; height: 100%; background: #000; color: var(--text); font-family: var(--font);
+  -webkit-font-smoothing: antialiased; }
+#map { position: absolute; inset: 0; background: #000; }
+.leaflet-container { font-family: var(--font); }
 
-#layers { top: 10px; right: 10px; width: 280px; max-height: calc(100% - 40px); overflow-y: auto; }
-.layer-row { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; cursor: pointer; }
-.layer-row input { margin-top: 3px; }
+/* Frosted-glass panels floating over the map */
+.panel { position: absolute; z-index: 1000; background: var(--glass);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5); border-radius: 18px; padding: 14px 16px;
+  font-size: 13px; line-height: 1.45; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25); }
+#readout { left: 12px; bottom: 12px; max-width: 320px; padding: 8px 12px; border-radius: 12px; }
+#readout small { color: var(--text-2); }
+
+#layers { top: 12px; right: 12px; width: 280px; max-height: calc(100% - 40px); overflow-y: auto; }
+#layers.folded { width: auto; padding: 8px 14px; }
+.layer-row { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; cursor: pointer; }
+.layer-row input { margin-top: 3px; accent-color: var(--blue); }
 .layer-name { display: block; font-weight: 600; }
-.layer-src { display: block; font-size: 11px; color: #c8b2a6; }
+.layer-src { display: block; font-size: 11px; color: var(--text-2); }
 
-#plan { top: 10px; left: 56px; width: 320px; max-height: calc(100% - 140px); overflow-y: auto; }
-.buttons { display: flex; gap: 6px; margin: 8px 0; }
-.buttons button { flex: 1; background: #3a2620; color: #f3e9e2; border: 1px solid #7a5040;
-  border-radius: 4px; padding: 6px 4px; cursor: pointer; font-size: 12px; }
-.buttons button.active { background: #c1502e; border-color: #ff8a5c; }
-#plan-out table { width: 100%; border-collapse: collapse; margin: 6px 0; }
-#plan-out td { padding: 2px 4px; border-top: 1px solid #3a2a24; vertical-align: top; }
-#plan-out td:first-child { font-variant-numeric: tabular-nums; width: 3.2em; }
-.ok { color: #7ee08a; font-weight: 600; }
-.warn { color: #ff6b5a; font-weight: 600; }
-.model { display: block; color: #a8968c; font-size: 10.5px; margin-top: 4px; }
+#plan { top: 12px; left: 56px; width: 330px; max-height: calc(100% - 140px); overflow-y: auto; }
+#plan > b:first-child { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+
+/* Pill buttons: grey by default, black when selected, blue for the main action */
+.buttons { display: flex; gap: 6px; margin: 10px 0; }
+.buttons button { flex: 1; background: var(--btn); color: var(--text); border: 0;
+  border-radius: 980px; padding: 8px 6px; cursor: pointer; font: 500 12.5px var(--font);
+  transition: background 0.15s; }
+.buttons button:hover { background: rgba(0, 0, 0, 0.11); }
+.buttons button.active { background: var(--text); color: #fff; }
+#btn-preview { background: var(--blue); color: #fff; }
+#btn-preview:hover { background: #0077ed; }
+
+#plan-out { font-size: 13px; }
+#plan-out table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+#plan-out td { padding: 5px 4px; border-top: 1px solid var(--line); vertical-align: top; }
+#plan-out td:first-child { font-variant-numeric: tabular-nums; width: 3.2em; color: var(--text-2); }
+#plan-out a { color: var(--blue); text-decoration: none; }
+.ok { color: var(--green); font-weight: 600; }
+.warn { color: var(--red); font-weight: 600; }
+.model { display: block; color: var(--text-2); font-size: 10.5px; margin-top: 6px; }
 
 /* Map pins */
 .pin { display: flex !important; align-items: center; justify-content: center; border-radius: 50%;
-  font: 700 13px system-ui, sans-serif; color: #fff; border: 2px solid #fff; box-shadow: 0 0 4px #000; }
-.pin-habitat { background: #2e7dd7; }
-.pin-station { background: #c1502e; }
-.pnr-pin { display: flex !important; align-items: center; justify-content: center; background: #ff2d2d;
-  color: #fff; font: 800 11px system-ui, sans-serif; border: 2px solid #fff; border-radius: 4px; }
+  font: 600 12px var(--font); color: #fff; border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); }
+.pin-habitat { background: var(--blue); }
+.pin-station { background: var(--text); }
+.pnr-pin { display: flex !important; align-items: center; justify-content: center; background: var(--red);
+  color: #fff; font: 700 10px var(--font); border: 2px solid #fff; border-radius: 980px; }
 
 /* Keep each 40 m grid cell a crisp square when zoomed in */
 .pixelated { image-rendering: pixelated; }
 
 /* Science-glow legend swatches in the layer panel */
-.layer-legend { display: block; font-size: 11px; margin: 2px 0; }
-.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 3px 0 6px; vertical-align: -1px; }
+.layer-legend { display: block; font-size: 11px; margin: 2px 0; color: var(--text-2); }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin: 0 3px 0 6px; vertical-align: -1px; }
 .sw:first-child { margin-left: 0; }
 
 /* Station card (popup on a station pin) */
-.card { font: 12.5px/1.35 system-ui, sans-serif; color: #222; }
-.card-title { font-size: 14px; display: block; }
-.card-h { font-weight: 700; margin-top: 6px; text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.04em; color: #8a3a20; }
+.leaflet-popup-content-wrapper { border-radius: 16px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3); }
+.card { font: 12.5px/1.45 var(--font); color: var(--text); }
+.card-title { font-size: 15px; font-weight: 700; display: block; }
+.card-h { font-weight: 600; margin-top: 8px; font-size: 11px; color: var(--text-2); }
 .card ul, .card ol { margin: 2px 0 4px; padding-left: 18px; }
-.card small { color: #555; }
+.card small { color: var(--text-2); }
 
 /* Place name on the map */
-.place-label { color: #fff; font: 700 12px system-ui, sans-serif; white-space: nowrap;
-  text-shadow: 0 0 3px #000, 0 0 3px #000; transform: translate(-8px, -18px); }
+.place-label { color: #fff; font: 600 12px var(--font); white-space: nowrap;
+  text-shadow: 0 1px 4px #000, 0 0 2px #000; transform: translate(-8px, -18px); }
 
-/* Big caption for the ▶ Demo (readable in a video) */
+/* Big caption for the Demo (readable in a video) */
 #caption { position: fixed; z-index: 4000; left: 50%; bottom: 7%; transform: translateX(-50%);
-  max-width: 90%; background: rgba(0, 0, 0, 0.82); color: #fff; padding: 10px 18px; border-radius: 8px;
-  font: 700 22px/1.25 system-ui, sans-serif; text-align: center; border: 2px solid #c1502e; }
-#plan-out a { color: #ffb08a; }
+  max-width: 90%; background: rgba(0, 0, 0, 0.7);
+  -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); color: #fff; padding: 12px 24px;
+  border-radius: 980px; font: 600 22px/1.25 var(--font); letter-spacing: -0.01em; text-align: center; }
 
 /* Folding panels: tap the title to hide everything else in the panel */
 .panel-title { cursor: pointer; display: block; }
@@ -66,16 +96,17 @@ html, body { margin: 0; height: 100%; background: #1a1210; color: #f3e9e2;
 
 /* Phones: plan panel across the top, layers folded at bottom right, small readout */
 @media (max-width: 700px) {
-  .panel { font-size: 12px; padding: 6px 8px; }
+  .panel { font-size: 12px; padding: 10px 12px; border-radius: 14px; }
   #plan { left: 8px; right: 8px; top: calc(8px + env(safe-area-inset-top, 0px)); width: auto; max-height: 38%; }
+  #plan > b:first-child { font-size: 17px; }
   #layers { top: auto; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); width: 62%; max-height: 45%; }
   #layers.folded { width: auto; }
   #readout { left: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); max-width: 34%; font-size: 10.5px; }
   .leaflet-control-zoom { display: none; }   /* pinch to zoom instead */
-  #caption { font-size: 15px; bottom: 22%; }
+  #caption { font-size: 15px; bottom: 22%; border-radius: 16px; }
 }
 
-/* Plain-words how-to at the top of the plan panel, and the "remove station" button in a card. */
-.howto { margin: 6px 0 0; font-size: 12px; line-height: 1.4; color: #e8d8cc; }
-.remove-stop { margin-top: 8px; width: 100%; padding: 6px; background: #3a2620; color: #ffb08a;
-               border: 1px solid #7a5040; border-radius: 6px; cursor: pointer; }
+/* One plain sentence under the title, and the "remove station" button in a card. */
+.howto { margin: 4px 0 0; font-size: 13px; line-height: 1.45; color: var(--text-2); }
+.remove-stop { margin-top: 10px; width: 100%; padding: 8px; background: rgba(215, 0, 21, 0.08); color: var(--red);
+  border: 0; border-radius: 980px; cursor: pointer; font: 500 12.5px var(--font); }

@@ -110,7 +110,7 @@ async function buildLayers() {
       name: "Shaded relief (from elevation)", mission: "MRO CTX stereo, tied to MGS MOLA",
       source: "Drawn by MarsCuff from the USGS Mars 2020 TRN CTX DTM (20 m), light from the north-west" },
     ...(trek ? [
-    { id: "mola", on: true, layer: trekTiles("Mars_MGS_MOLA_ClrShade_merge_global_463m", "jpg", 7),
+    { id: "mola", on: false,   // off at start: its rainbow colours drown the real photos layer: trekTiles("Mars_MGS_MOLA_ClrShade_merge_global_463m", "jpg", 7),
       name: "Colour elevation (MOLA)", mission: "Mars Global Surveyor · MOLA",
       source: "NASA Mars Trek, Mars_MGS_MOLA_ClrShade_merge_global_463m" },
     { id: "ctx", on: true, layer: trekTiles("JEZ_ctx_B_soc_008_orthoMosaic_6m_Eqc_latTs0_lon0", "png", 13),
@@ -146,6 +146,7 @@ function buildLayerPanel(map, layers) {
   // Tapping the title folds the panel away (handy on a phone screen).
   panel.innerHTML = '<b class="panel-title">Layers ▾</b>';
   panel.querySelector(".panel-title").onclick = () => panel.classList.toggle("folded");
+  panel.classList.add("folded");   // start as a small "Layers" button: sources are one tap away
   if (window.innerWidth < 700) panel.classList.add("folded");   // start folded on phones
   layers.forEach((entry) => {
     const row = document.createElement("label");

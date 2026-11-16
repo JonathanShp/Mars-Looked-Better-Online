@@ -125,8 +125,8 @@ const PlanUI = {
     Plan.stations.forEach((s, k) => this.addMarker(s, String(k + 1), "station", k, Science.cardHtml(cards[k], k + 1)));
 
     if (!res) return this.say(Plan.habitat
-      ? "Step 2: tap 2–5 places to explore (the glow = science only people can do), or press ✨ Suggest."
-      : "Step 1: tap the map to place the habitat, the astronauts' home (try near the Perseverance landing site). Or press ▶ Demo to watch.");
+      ? "Tap 2–5 places to explore. The glow marks science only people can do. Or press Suggest."
+      : "Tap the map to place the home base, near the Perseverance landing site. Or press Watch demo.");
     if (res.error) return this.say(res.error);
 
     // Route line, one polyline per leg.
@@ -193,7 +193,7 @@ const PlanUI = {
       ? `<span class="ok">Fits: ${hm(res.totalSeconds)} of ${hm(res.usable)} usable</span>`
       : `<span class="warn">Too long: ${hm(res.totalSeconds)} &gt; ${hm(res.usable)} usable</span>`;
     document.getElementById("plan-out").innerHTML =
-      `${verdict} <small>· Step 3: press Preview cuff</small><br>Walk: ${(res.metres / 1000).toFixed(2)} km · ` +
+      `${verdict} <small>· now press 3 · Checklist</small><br>Walk: ${(res.metres / 1000).toFixed(2)} km · ` +
       (res.pnr ? `<b class="warn">PNR at EVA ${hm(res.pnr.clock)}</b>` : "No Point of No Return on this plan") +
       `<table>${rows}</table>` +
       `<small class="model">Times are a MODEL: ${MODELS.walkSource} ${MODELS.stationWorkSource} ` +

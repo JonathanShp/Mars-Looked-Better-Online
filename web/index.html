@@ -7,35 +7,35 @@
   <!-- Leaflet 1.9.4 (open-source map library, BSD-2 licence) -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Inter: a clean free font close to Apple's (Google Fonts) -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/cuff.css">
 </head>
 <body>
   <div id="map"></div>
   <div id="plan" class="panel">
-    <b>MarsCuff · Jezero Marswalk</b>
-    <p class="howto">Plan a safe walk on Mars:
-      <b>1</b> place the habitat (home) · <b>2</b> add 2–5 science stations ·
-      <b>3</b> get the wrist checklist (cuff). Blue line = route, <b>PNR</b> = last safe point to turn back.</p>
+    <b>MarsCuff</b>
+    <p class="howto">Plan a safe walk on Mars. Place a home base, add places to explore, then get the wrist checklist.</p>
     <div class="buttons">
-      <button id="btn-habitat">1 · Habitat</button>
-      <button id="btn-station">2 · Stations</button>
-      <button id="btn-suggest" title="Pick the best science spots you can reach">✨ Suggest</button>
+      <button id="btn-habitat">1 · Home base</button>
+      <button id="btn-station">2 · Add stops</button>
+      <button id="btn-suggest" title="Pick the best science spots you can reach">Suggest</button>
     </div>
     <div class="buttons">
-      <button id="btn-demo">▶ Demo</button>
-      <button id="btn-clear">Clear all</button>
+      <button id="btn-preview">3 · Checklist</button>
+      <button id="btn-demo">Watch demo</button>
+      <button id="btn-clear">Clear</button>
     </div>
     <div class="buttons">
-      <button id="btn-preview">3 · Preview cuff</button>
-      <button id="btn-print">Print cuff</button>
-      <button id="btn-minecraft" hidden>⛏ Send to Minecraft</button>
+      <button id="btn-print">Print checklist</button>
+      <button id="btn-minecraft" hidden>Send to Minecraft</button>
     </div>
     <div id="plan-out">Loading NASA data…</div>
     <!-- How to walk the plan in Minecraft. Plain text, closed by default, so it is
          there for anyone who wants it without getting in the way of planning. -->
     <details id="mc-setup">
-      <summary>⛏ Walk this in Minecraft — how to set it up</summary>
+      <summary>Walk this in Minecraft</summary>
       <p>The walk you plan here can be built as real Jezero ground in Minecraft Java Edition,
         <b>1 block = 1 metre</b> of Mars, sideways and up. Block 0,0 is Perseverance's landing site.</p>
       <ol>
