@@ -425,6 +425,11 @@ def write_region(path, chunks):
 # TIME COMPRESSION (this is OURS, not NASA's): one EVA minute every 200 ticks, i.e.
 # every 10 real seconds. A 384-minute air budget is then about 64 minutes of playing.
 TICKS_PER_EVA_MINUTE = 200
+TELEPORT_ONCE = '''# First tick of the session: put everyone at the habitat. level.dat still
+# carries the old spawn point, and setworldspawn does not move a player who is
+# already standing in the world, so we move them once, here.
+execute if score #tp mc_at matches 0 if entity @a run teleport @a %d %d %d
+execute if score #tp mc_at matches 0 if entity @a run scoreboard players set #tp mc_at 1'''
 ARRIVE_RADIUS = 30          # blocks: close enough to a pillar to count as "arrived"
 LEAVE_RADIUS = 60           # blocks: far enough away to re-arm it
 
@@ -526,6 +531,9 @@ def mission_functions(plan):
         out["arrive_" + key] = ("scoreboard players set #%s mc_at 1\n" % key
                                 + "function marscuff:%s\n" % fn)
 
+    if hab:
+        hx, hz = jm.block_of_cell(hab["row"], hab["col"])
+        tick.append(TELEPORT_ONCE % (hx, jm.ground_y(hx, hz) + 2, hz))
     out["tick"] = "\n".join(tick) + "\n"
 
     # --- set up on load. The load tag runs every time the world is opened, so every
@@ -539,6 +547,7 @@ def mission_functions(plan):
              "scoreboard players set #ticks mc_clock 0"]
     for key, _cell, _fn in places:
         setup.append("scoreboard players set #%s mc_at 0" % key)
+    setup.append("scoreboard players set #tp mc_at 0")   # the one-shot spawn teleport
     setup += _say(["", "MARSCUFF: a %d minute EVA. The air number above your hotbar is" % budget,
                    "your whole budget - walking, working and the walk home.",
                    "Follow the glowing line. Stand at a pillar to get your tasks."]).splitlines()
@@ -630,8 +639,12 @@ def write_datapack(root, plan=None):
 # ---------------------------------------------------------------- 7. building
 def region_dir(save):
     """Minecraft 26.x keeps the overworld in dimensions/minecraft/overworld/region; 1.21 uses region/."""
-    new = os.path.join(save, "dimensions", "minecraft", "overworld")
-    return os.path.join(new, "region") if os.path.isdir(new) else os.path.join(save, "region")
+    # 26.3 ALWAYS reads the overworld from here. A save we build from scratch has no
+    # dimensions folder yet, and writing to <save>/region left the game generating its
+    # own empty land instead of ours, so make the folder rather than falling back.
+    out = os.path.join(save, "dimensions", "minecraft", "overworld", "region")
+    os.makedirs(out, exist_ok=True)
+    return out
 
 
 def _init_worker(tracks, region, base, marks=None):
