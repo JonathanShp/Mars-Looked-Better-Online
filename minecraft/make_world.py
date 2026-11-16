@@ -448,6 +448,17 @@ def _say(lines):
     return "".join('tellraw @a {"text":%s}\n' % json.dumps(t) for t in lines)
 
 
+def _compass(dx, dz):
+    """A plain word for a direction. Minecraft axes: +x east, +z south."""
+    ns = "north" if dz < 0 else "south"
+    ew = "east" if dx > 0 else "west"
+    if abs(dx) > 2.5 * abs(dz):
+        return ew
+    if abs(dz) > 2.5 * abs(dx):
+        return ns
+    return ns + "-" + ew
+
+
 def mission_functions(plan):
     """{function name: file text} for the air clock, the cuff and the stations."""
     if not plan:
@@ -486,9 +497,19 @@ def mission_functions(plan):
 
     hab = plan.get("habitat")
     if hab:
-        out["habitat"] = ("# Back at the habitat: the cuff again, and a fresh look at the air\n"
-                          + _say(["", "You are at the habitat. Cuff:"])
-                          + "function marscuff:cuff\n")
+        # Short on purpose. The whole cuff used to print here, and because the
+        # spawn is inside the habitat's arrive radius it printed on every load.
+        hx0, hz0 = jm.block_of_cell(hab["row"], hab["col"])
+        first = (plan.get("stations") or [None])[0]
+        nxt = "Station 1"
+        if first:
+            sx0, sz0 = jm.block_of_cell(first["row"], first["col"])
+            nxt = "Station 1, %.1f km %s" % (
+                max(abs(sx0 - hx0), abs(sz0 - hz0)) / 1000.0, _compass(sx0 - hx0, sz0 - hz0))
+        out["habitat"] = ("# At the habitat. The full cuff is in HOW-TO-USE.txt." + chr(10)
+                          + _say(["", "HABITAT. Start and finish here.",
+                                  "Next: " + nxt + " - follow the glowing line.",
+                                  "Your tasks print when you reach a purple pillar."]))
         places.insert(0, ("home", hab, "habitat"))
 
     # --- the clock
@@ -515,6 +536,13 @@ def mission_functions(plan):
             "# Air left, above the hotbar, all the time.",
             'title @a actionbar [{"text":"Air: "},{"score":{"name":"#air","objective":"mc_air"}},'
             '{"text":" min of %d"}]' % budget]
+    if plan.get("path"):
+        # Lay the route in whatever chunks happen to be loaded. setblock does
+        # nothing in an unloaded chunk, so from the load tag (where this used to
+        # run) almost none of it landed; from here the trail grows as you walk.
+        tick += ["# the route, twice per EVA minute = about every 5 real seconds",
+                 "execute if score #ticks mc_clock matches 1 run function marscuff:path",
+                 "execute if score #ticks mc_clock matches 100 run function marscuff:path"]
 
     # Arrival detection: stand near a pillar and its page prints, once. Walk away
     # past LEAVE_RADIUS and it arms again, so you can come back to re-read it.
@@ -553,7 +581,11 @@ def mission_functions(plan):
             if (x, z) in seen:
                 continue
             seen.add((x, z))
-            line.append("setblock %d %d %d minecraft:glowstone" % (x, jm.ground_y(x, z) + 1, z))
+            # Every 10th point is a 3-tall post, so the line reads as a
+            # dashed trail from a long way off instead of vanishing.
+            for k in range(3 if len(seen) % 10 == 1 else 1):
+                line.append("setblock %d %d %d minecraft:glowstone"
+                            % (x, jm.ground_y(x, z) + 1 + k, z))
     if line:
         # chr(10) is a newline: written this way so the generated file text
         # carries no escapes of its own.
@@ -576,8 +608,18 @@ def mission_functions(plan):
     setup += _say(["", "MARSCUFF: a %d minute EVA. The air number above your hotbar is" % budget,
                    "your whole budget - walking, working and the walk home.",
                    "Follow the glowing line. Stand at a pillar to get your tasks."]).splitlines()
-    if out.get("path"):
-        setup.append("function marscuff:path")
+    # Where the stations actually are. They are 1-2 km out, so nothing is
+    # visible from the habitat and the player needs numbers and a bearing.
+    legs, sts = [], plan.get("stations") or []
+    for i, s in enumerate(sts):
+        x, z = jm.block_of_cell(s["row"], s["col"])
+        prev = hab if i == 0 else sts[i - 1]
+        px, pz = jm.block_of_cell(prev["row"], prev["col"]) if prev else (x, z)
+        legs.append("  Station %d: X %d  Z %d  (%.1f km %s of the last stop)"
+                    % (i + 1, x, z, max(abs(x - px), abs(z - pz)) / 1000.0,
+                       _compass(x - px, z - pz)))
+    if legs:
+        setup += _say(["Press F3 for coordinates. Your stops:"] + legs).splitlines()
     out["_load_extra"] = "\n".join(setup) + "\n"
     return out
 
