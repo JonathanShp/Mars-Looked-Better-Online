@@ -13,7 +13,6 @@ paste the parts below -> Submit before 10 PM. Slides link: open the slides, pres
 **Final Project:**
 - Live app: https://jonathanshp.github.io/Mars-Looked-Better-Online/
 - Code: https://github.com/JonathanShp/Mars-Looked-Better-Online
-- Ready-made Minecraft worlds: https://jonathanshp.github.io/Mars-Looked-Better-Online/web/downloads.html
 
 ---
 
@@ -25,11 +24,9 @@ On Mars, a radio message to Earth takes 3 to 22 minutes each way, so astronauts 
 
 **What it does:** route planning across real Jezero terrain (slopes over the limit are blocked), an EVA timeline with a 20% safety reserve, a Point of No Return, science tasks at each station from the geologic map and Mars 2020 instrument methods, and a printable wrist cuff. A "Watch demo" button tells the whole story in about 30 seconds.
 
-**Benefits:** mission planners can try a Marswalk in minutes; analog field teams on Earth can print a cuff, walk it, and check our walking model; classrooms get a free site with no login.
+**Benefits:** mission planners can try a Marswalk in minutes; analog field teams on Earth can print a cuff, walk it, and check our walking model; classrooms get a free site with no login, to learn about Mars from real NASA data.
 
-**Minecraft:** the plan can be built as a true-scale Minecraft (Java Edition) world of Jezero, 1 block = 1 metre, with glowing arrows along the route, the stations, the Point of No Return, and the cuff as a book in your hand. Students can walk the walk they planned, or download one of three ready-made Marswalk worlds (no mod needed). It could help kids learn about Mars and find out if they'd like to be an astronaut. A Minecraft Education version is a possible next step (not built yet).
-
-**Tools:** Python (rasterio, numpy) to process the data once; Leaflet in the browser; a Minecraft mod bridge for the world builder.
+**Tools:** Python (rasterio, numpy) to process the data once; Leaflet in the browser.
 
 **Next:** the same pipeline could run on NASA Moon Trek data to plan Artemis Moon walks.
 
