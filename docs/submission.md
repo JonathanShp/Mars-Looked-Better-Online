@@ -23,7 +23,7 @@ On Mars, a radio message to Earth takes 3 to 22 minutes each way, so astronauts 
 
 ## Project details
 
-**What it does:** route planning across real Jezero terrain (slopes over the limit are blocked), an EVA timeline with a 20% safety reserve, a Point of No Return, science tasks at each station from the geologic map and Mars 2020 instrument methods, and a printable wrist cuff. A ▶ Demo button tells the whole story in about 30 seconds.
+**What it does:** route planning across real Jezero terrain (slopes over the limit are blocked), an EVA timeline with a 20% safety reserve, a Point of No Return, science tasks at each station from the geologic map and Mars 2020 instrument methods, and a printable wrist cuff. A "Watch demo" button tells the whole story in about 30 seconds.
 
 **Benefits:** mission planners can try a Marswalk in minutes; analog field teams on Earth can print a cuff, walk it, and check our walking model; classrooms get a free site with no login.
 
