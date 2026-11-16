@@ -74,3 +74,8 @@ html, body { margin: 0; height: 100%; background: #1a1210; color: #f3e9e2;
   .leaflet-control-zoom { display: none; }   /* pinch to zoom instead */
   #caption { font-size: 15px; bottom: 22%; }
 }
+
+/* Plain-words how-to at the top of the plan panel, and the "remove station" button in a card. */
+.howto { margin: 6px 0 0; font-size: 12px; line-height: 1.4; color: #e8d8cc; }
+.remove-stop { margin-top: 8px; width: 100%; padding: 6px; background: #3a2620; color: #ffb08a;
+               border: 1px solid #7a5040; border-radius: 6px; cursor: pointer; }
